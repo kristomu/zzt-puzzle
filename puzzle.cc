@@ -1,0 +1,1043 @@
+#include <unordered_map>
+#include <algorithm>
+#include <stdexcept>
+#include <iostream>
+#include <iterator>
+#include <cstddef>
+#include <numeric>
+#include <limits>
+#include <vector>
+#include <cmath>
+#include <list>
+#include <map>
+#include <set>
+
+// Things that need to be done:
+//	- REFACTORING. Board definitely deserves its own file.
+//		And the board generator should be put somewhere and
+//		finalized so that rearranging the rest of the code won't
+//		invalidate the board IDs (currently based on random seeds).
+//	- Parallelization (openmp or queues).
+//	- Move ordering in solve(), try the naive approach first
+//	- Iterative deepening DFS, try the previous iteration's PV first
+//	- Some way to tell that a board is definitely unsolvable, or variant
+//		solutions that can check if it is unsolvable (a slider puzzle can
+//		never be solved if it's unsolvable when all the sliders are boulders, say)
+//	- The TODO in solve regarding early pruning (alpha beta analog) where if the
+//		solution is 4 moves out and we have 10 moves left, set the moves left to 4
+//		because there's no point in going deeper.
+
+enum tile {T_EMPTY, T_PLAYER, T_SOLID, T_SLIDEREW, T_SLIDERNS, T_BOULDER };
+enum direction {NORTH, SOUTH, EAST, WEST, IDLE};
+
+const int NUM_TILE_TYPES = 6;
+
+class coord {
+	public:
+		int x;
+		int y;
+
+		coord() { x = 0; y = 0; }
+		coord(int x_in, int y_in) { x = x_in; y = y_in; }
+
+		// boilerplate
+
+		coord operator+(const coord & rhs) const {
+			return coord(x + rhs.x, y + rhs.y);
+		}
+
+		coord operator-(const coord & rhs) const {
+			return coord(x - rhs.x, y - rhs.y);
+		}
+
+		coord operator+=(const coord & rhs) {
+			x += rhs.x;
+			y += rhs.y;
+			return *this;
+		}
+
+		coord operator-=(const coord & rhs) {
+			x -= rhs.x;
+			y -= rhs.y;
+			return *this;
+		}
+
+		bool operator==(const coord & other) {
+			return x == other.x && y == other.y;
+		}
+
+		bool operator!=(const coord & other) {
+			return !(*this == other);
+		}
+};
+
+// This one takes a bit of explaining. When the player moves,
+// he may push a number of tiles in the direction he's moving.
+// These tiles are then all shifted up one to the first empty
+// space (if any), otherwise the move is impossible. Because
+// copying the structure each time we descend in minmax/alpha-beta
+// would be too slow, we need to be able to undo the move, which
+// is exactly the same thing as pushing the whole stack, player
+// included, one step in the opposite direction.
+// Thus we need to know where to start pushing, and what direction
+// the player moved when causing the push; this is what that's for.
+
+struct push_info {
+	coord last_push_destination;
+	coord player_direction;
+};
+
+class zzt_board {
+	private:
+		coord size;
+
+		// Only access this with set() and get() and in the
+		// constructor!
+		std::vector<std::vector<tile> > board_p;
+
+		// Values for Zobrist hashing.
+		std::vector<std::vector<std::vector<uint64_t> > > zobrist_values;
+		uint64_t hash;
+		void generate_zobrist();
+
+		bool pushable(const coord & pos, const coord & delta) const;
+
+		// out_terminus is the last position we push something onto.
+		// See the comment below about last_push_destination.
+		bool push(const coord & current_pos, const coord & delta,
+			coord & out_terminus);
+		bool push(coord & current_pos, direction dir,
+			coord & out_terminus) {
+
+			return push(current_pos, get_delta(dir), out_terminus);
+		}
+
+
+	public:
+		coord player_pos;
+
+		// Shouldn't be inside board, but oh well.
+		coord get_delta(direction dir) const;
+
+		coord get_size() const { return size; }
+		uint64_t get_hash() const { return hash; }
+
+		// Pretend that the playing field is surrounded by
+		// infinitely many solids.
+		tile get_tile_at(const coord & where) const {
+			if (where.x < 0 || where.y < 0) {
+				return T_SOLID;
+			}
+			if (where.x >= size.x || where.y >= size.y) {
+				return T_SOLID;
+			}
+
+			return board_p[where.y][where.x];
+		}
+
+		void set(const coord & where, tile what) {
+			if (where.x < 0 || where.y < 0 ||
+				where.x >= size.x || where.y >= size.y) {
+				throw std::runtime_error("Set: Tried to set outside board!");
+			}
+			// Unhash the current tile at this position, set the new
+			// tile, and hash it.
+			hash ^= zobrist_values[where.y][where.x][
+				board_p[where.y][where.x]];
+			board_p[where.y][where.x] = what;
+
+			hash ^= zobrist_values[where.y][where.x][(int)what];
+		}
+
+		void swap(const coord & a, const coord & b) {
+			tile backup = get_tile_at(a);
+			set(a, get_tile_at(b));
+			set(b, backup);
+		}
+
+		zzt_board(coord player_pos_in, coord board_size) {
+			size = board_size;
+			generate_zobrist();
+
+			board_p = std::vector<std::vector<tile > >(board_size.y,
+				std::vector<tile>(board_size.x, T_EMPTY));
+			hash = 0;
+			// Hash in the Zobrist values of all the empties.
+			for (size_t y = 0; y < size.y; ++y) {
+				for (size_t x = 0; x < size.x; ++x) {
+					hash ^= zobrist_values[y][x][(int)T_EMPTY];
+				}
+			}
+
+			player_pos = player_pos_in;
+			set(player_pos, T_PLAYER);
+		}
+
+
+		std::vector<push_info> push_log;
+		std::vector<push_info>::const_iterator push_log_pos; // how do we do "no push yet"?
+
+		// Move the player in the direction given
+		bool do_move(direction dir);
+
+		// Move the player in the opposite direction
+		void undo_move();
+
+		void print() const;
+
+		bool operator==(const zzt_board & other) {
+			if (other.get_size() != get_size()) { return false; }
+			if (hash != other.hash) { return false; }
+
+			coord pos;
+			for (pos.y = 0; pos.y < get_size().y; ++pos.y) {
+				for (pos.x = 0; pos.x < get_size().x; ++pos.x) {
+					if(get_tile_at(pos) != other.get_tile_at(pos)) {
+						return false;
+					}
+				}
+			}
+
+			return true;
+		}
+
+		bool operator!=(const zzt_board & other) {
+			return !(*this == other);
+		}
+};
+
+void zzt_board::generate_zobrist() {
+	// The vector contains one value for each possible tile at each
+	// possible location. TODO later? Use a custom random function
+	// with a fixed seed to make this completely deterministic and
+	// debuggable.
+	zobrist_values = std::vector<std::vector<std::vector<uint64_t> > >(
+		size.y, std::vector<std::vector<uint64_t> >(size.x,
+		std::vector<uint64_t>(NUM_TILE_TYPES, 0)));
+
+	for (auto & row: zobrist_values) {
+		for (auto & column: row) {
+			for (uint64_t & cell: column) {
+				cell = (random() << 32LL) + random();
+			}
+		}
+	}
+}
+
+coord zzt_board::get_delta(direction dir) const {
+	switch(dir) {
+		case NORTH: return coord(0, -1);
+		case SOUTH: return coord(0, 1);
+		case EAST: return coord(1, 0);
+		case WEST: return coord(-1, 0);
+		default: throw std::logic_error("get_delta: Invalid direction!");
+	}
+}
+
+bool zzt_board::pushable(const coord & pos, const coord & delta) const {
+	tile at_pos = get_tile_at(pos);
+
+	switch(at_pos) {
+		case T_EMPTY: return false;
+		case T_PLAYER: return true;
+		case T_SOLID: return false;
+		// DOH!! I couldn't understand why this wasn't working. I was
+		// using pos instead of delta.
+		case T_SLIDEREW: return delta.y == 0; // can't be moved vertically
+		case T_SLIDERNS: return delta.x == 0; // can't be moved horizontally
+		case T_BOULDER: return true;
+		default: throw std::runtime_error("Pushable: unknown tile type!");
+	}
+}
+
+bool zzt_board::push(const coord & current_pos, const coord & delta,
+	coord & out_terminus) {
+	// Check if the current tile is pushable.
+	if (!pushable(current_pos, delta)) {
+		 return false;
+	}
+
+	// Check if the destination tile is an empty: if so, we just have
+	// to move the current tile over there.
+	coord dest_tile = current_pos + delta;
+	if (get_tile_at(dest_tile) == T_EMPTY) {
+		swap(dest_tile, current_pos);
+		out_terminus = dest_tile;
+		return true;
+	}
+
+	// Check if the destination tile is pushable. If so, recurse.
+	// If we get a true result, then there will be an empty at the
+	// destination tile and we can move the source tile over there.
+	if (!pushable(dest_tile, delta)) {
+		return false;
+	}
+
+	if (push(dest_tile, delta, out_terminus)) {
+		swap(dest_tile, current_pos);
+		return true;
+	} else {
+		return false;
+	}
+}
+
+bool zzt_board::do_move(direction dir) {
+	// Try to push in the direction given. If it works, update the
+	// player position and set the terminus and direction info.
+	// Otherwise just return false.
+
+	coord out_terminus;
+	if (push(player_pos, dir, out_terminus)) {
+		player_pos += get_delta(dir);
+
+		push_info this_push;
+		this_push.last_push_destination = out_terminus;
+		this_push.player_direction = get_delta(dir);
+		push_log.push_back(this_push);
+
+		return true;
+	} else {
+		return false;
+	}
+}
+
+void zzt_board::undo_move() {
+	// First move the player in the opposite direction, leaving
+	// a gap on the player side of the chain of pushables that
+	// we're undoing.
+
+	// Then push from the terminus in the opposite direction of
+	// the player's earlier movement, which will reset every tile
+	// between the player and the terminus.
+
+	// This will throw an exception if anything strange happens.
+	coord last_move_dir_delta = push_log.rbegin()->player_direction;
+	coord opposite_delta = coord(0, 0) - last_move_dir_delta;
+	coord player_new_pos = player_pos + opposite_delta;
+
+	if (get_tile_at(player_new_pos) != T_EMPTY) {
+		throw std::logic_error("Trying to undo move but player can't retrace his steps!");
+	}
+	if (get_tile_at(player_pos) != T_PLAYER) {
+		throw std::logic_error("Player pos is not correct!");
+	}
+
+	set(player_pos, T_EMPTY);
+	set(player_new_pos, T_PLAYER);
+
+	coord throwaway, chain_end = push_log.rbegin()->last_push_destination;
+
+	// Only push the rest of the chain if there's anything to it.
+	// If it's just the player, then skip.
+	if (chain_end != player_pos) {
+		if (!push(chain_end, opposite_delta, throwaway)) {
+			throw std::logic_error("Can't push tiles back into original place!");
+		}
+	}
+
+	player_pos = player_new_pos;
+
+	push_log.pop_back();
+}
+
+void zzt_board::print() const {
+	coord pos;
+	for (pos.y = 0; pos.y < size.y; ++pos.y) {
+		for (pos.x = 0; pos.x < size.x; ++pos.x) {
+			switch(get_tile_at(pos)) {
+				case T_EMPTY: std::cout << "."; break;
+				case T_SOLID: std::cout << "#"; break;
+				case T_PLAYER: std::cout << "@"; break;
+				case T_SLIDEREW: std::cout << ">"; break;
+				case T_SLIDERNS: std::cout << "^"; break;
+				case T_BOULDER: std::cout << "x"; break;
+				default: std::cout << "?"; break;
+			}
+		}
+		std::cout << std::endl;
+	}
+}
+
+// Fill some empty tiles with non-empty tiles: for each
+// empty tile, leave it alone with probability sparsity,
+// or fill it with probability 1-sparsity.
+void fill_puzzle(zzt_board & board, double sparsity) {
+
+	coord pos;
+	for (pos.y = 0; pos.y < board.get_size().y; ++pos.y) {
+		for (pos.x = 0; pos.x < board.get_size().x; ++pos.x) {
+			if(board.get_tile_at(pos) != T_EMPTY) {
+				continue;
+			}
+			if (drand48() < sparsity) { continue; }
+
+			switch(1 + random()%4) {
+				default:
+				case 0: board.set(pos, T_EMPTY); break;
+				// TODO: enable this ???
+				case 1: //board.set(pos, T_SOLID); break;
+				case 2: board.set(pos, T_SLIDEREW); break;
+				case 3: board.set(pos, T_SLIDERNS); break;
+				case 4: board.set(pos, T_BOULDER); break;
+			}
+		}
+	}
+}
+
+zzt_board create_random_puzzle(double sparsity,
+	coord player_pos, coord max_size) {
+
+	zzt_board out_board(player_pos, max_size);
+
+	fill_puzzle(out_board, sparsity);
+	return out_board;
+}
+
+
+void test_one() {
+	coord max(random()%10 + 2, random()%10 + 2);
+	coord player_pos(random() % max.x, random() % max.y);
+
+	zzt_board test_board = create_random_puzzle(0.8, player_pos, max);
+
+	//std::cout << "===============" << std::endl;
+	//std::cout << "Starting off:" << std::endl;
+	zzt_board before = test_board;
+	//test_board.print();
+	//std::cout << "\n";
+	int moves_made = 0;
+	for (int j = 0; j < random() % 4 + 1; ++j) {
+		if (test_board.do_move((direction)(random() % 4))) {
+			++moves_made;
+			if (test_board != before && (test_board.get_hash() == before.get_hash())) {
+				throw std::runtime_error("But the hash didn't change!");
+			}
+			//std::cout << "Made a move:\n";
+			//test_board.print();
+		}
+	}
+
+	for (int k = 0; k < moves_made; ++k) {
+		test_board.undo_move();
+		//std::cout << "After undoing:\n";
+		//test_board.print();
+	}
+
+	if (test_board != before) {
+		throw std::runtime_error("Undo seems to not be working! That's a bug.");
+	}
+
+}
+
+// Get the L1 distance. We're going to use this as an evaluation function
+// for the lack of anything better.
+double manhattan_dist(const coord & a, const coord & b) {
+	return fabs(a.x-b.x) + fabs(a.y-b.y);
+}
+
+// Higher is better.
+int evaluate(const zzt_board & board, const coord & end_square) {
+	return -manhattan_dist(board.player_pos, end_square);
+}
+
+const int WIN = 1e9 - 1, LOSS = -1e9;
+
+// Evaluation score. We first compare the actual score. If there's a tie,
+// then the shortest path (highest recursion level at win state) wins.
+class eval_score {
+	public:
+		int score;
+		int recursion_level;
+
+		eval_score(int score_in, int recur_level_in) {
+			score = score_in;
+			recursion_level = recur_level_in;
+		}
+
+		bool operator>(const eval_score & other) {
+			if (score != other.score) {
+				return score > other.score;
+			}
+
+			return recursion_level > other.recursion_level;
+		}
+};
+
+// It would be a good idea to find a way to decisively say "nope, the board
+// is unsolvable" ahead of time. Problem is, I have no idea how. XXX
+
+eval_score solve(zzt_board & board, const coord & end_square,
+	std::vector<std::vector<direction> > & principal_variation,
+	std::unordered_map<uint64_t, int> & transpositions, int recursion_level,
+	uint64_t & nodes_visited) {
+
+	++nodes_visited;
+
+	//std::cout << "recursion level " << recursion_level << "[" << board.get_hash() << "]" << std::endl;
+
+	if (board.player_pos == end_square) {
+		return eval_score(WIN, recursion_level); // An outright win.
+	}
+
+	if (recursion_level == 0) {
+		return eval_score(evaluate(board, end_square),
+			recursion_level);
+	}
+
+	// Check if this board state has already been visited at this
+	// recursion level or higher. If so, there's no need to go down
+	// this branch. If it has been visited, but on a lower recursion
+	// level, then it's possible that the extra moves may lead closer
+	// to a solution, and we should check anyway.
+
+	// Note that because the "game tree" is a cyclic graph, there's some
+	// ambiguity about what value a solution should have if it consists
+	// of just going back and forth all the time. On the other hand, it
+	// should be possible to "pass", but transposition tables don't allow
+	// us to. This may cause somewhat different ultimate scores with or
+	// without transposition tables, but shouldn't matter much in practice.
+	if (transpositions.find(board.get_hash()) != transpositions.end()) {
+		// TODO: If the transposition table says it's a win at a lesser
+		// recursion depth, that should also lead to a direct cutoff,
+		// because then it's definitely a win given more moves (there's no
+		// zugzwang). The difficult part is making sure the PV is as short
+		// as possible, which may require inserting "best move" data into the
+		// table itself... which we need for IDFS anyway.
+		if (transpositions.find(board.get_hash())->second >= recursion_level) {
+			return eval_score(LOSS, recursion_level);
+		}
+	}
+
+	// Quick and dirty hack to keep size limited so we don't crash with
+	// an out of memory error.
+	if (transpositions.size() < 1e9) {
+		transpositions[board.get_hash()] = recursion_level;
+	}
+
+	eval_score record_score(LOSS, recursion_level);
+
+	for (direction dir: {SOUTH, EAST, NORTH, WEST}) {
+		if (!board.do_move(dir)) { continue; }
+
+		eval_score solution_score = solve(board, end_square,
+			principal_variation, transpositions,
+			recursion_level-1, nodes_visited);
+
+		// TODO??? If we get a winning solution, then for all subsequent
+		// solutions, limit the depth to that of the winning solution
+		// because we're not interested in any longer solutions.
+
+		if (solution_score > record_score) {
+			record_score = solution_score;
+
+			// Copy the solution itself (PV) from the deeper
+			// recursion onto our current best guess; plus the
+			// direction that got us to the record.
+			// At any level, pv[level][0] will then contain the
+			// steps to the best solution so far, from the starting
+			// point currently being explored at that level.
+			principal_variation[recursion_level][0] = dir;
+			std::copy(
+				principal_variation[recursion_level-1].begin(),
+				principal_variation[recursion_level-1].begin() +
+					recursion_level-1,
+				principal_variation[recursion_level].begin() + 1);
+			// Since we may be copying a shorter solution over a longer
+			// solution, terminate the longer solution with an IDLE...
+			// like this.
+			principal_variation[recursion_level][
+				recursion_level - record_score.recursion_level] = IDLE;
+		}
+
+		board.undo_move();
+	}
+
+	return record_score;
+}
+
+std::vector<direction> get_solution(const
+	std::vector<std::vector<direction> > & principal_variation) {
+
+	// Just read off the lower PV row to get the principal variation,
+	// until we get to IDLE, which marks the end of the solution.
+
+	std::vector<direction> solution;
+	for (direction dir: *principal_variation.rbegin()) {
+		if(dir == IDLE) {
+			return solution;
+		}
+		solution.push_back(dir);
+	}
+
+	return solution;
+}
+
+void print_solution(const std::vector<direction> & solution) {
+	for (direction dir: solution) {
+		switch(dir) {
+			case NORTH: std::cout << "N "; break;
+			case SOUTH: std::cout << "S "; break;
+			case EAST: std::cout << "E "; break;
+			case WEST: std::cout << "W "; break;
+			default:
+				throw std::logic_error("print_solution: Unknown direction!");
+		}
+	}
+	std::cout << std::endl;
+}
+
+// Iterative deepening.
+// I should provide the PV later...
+/*
+int idfs_solve(zzt_board & board, const coord & end_square,
+	int max_recursion_level) {
+
+	int score;
+
+	for (int recur = 0; recur < max_recursion_level; ++recur) {
+		std::unordered_map<uint64_t, int> transpositions;
+
+		score = find_solution(board, end_square,
+			transpositions, recur);
+
+		if (score == WIN || score == LOSS) {
+			return score;
+		}
+	}
+
+	return score;
+}*/
+
+// Puzzle generation idea around the property that a slider puzzle
+// never goes from unsolvable to solvable by adding more non-empty
+// components to it.
+
+const int MAX_DEPTH = 30;
+
+int turns_to_solve(zzt_board board, coord end_square, int max_steps) {
+	std::unordered_map<uint64_t, int> transpositions;
+
+	std::vector<std::vector<direction> > pv(max_steps+1,
+		std::vector<direction>(max_steps+1, IDLE));
+
+	uint64_t nodes_visited;
+
+	eval_score result = solve(board, end_square,
+		pv, transpositions, max_steps,
+		nodes_visited);
+
+	// There may be an off-by-one here, fix later
+	if (result.score > 0) {
+		return max_steps-result.recursion_level;
+	} else {
+		return -1;
+	}
+}
+
+int poor_mans_idfs_turns_to_solve(zzt_board board, coord end_square) {
+	int max_steps = MAX_DEPTH;
+
+	int shallow_search = turns_to_solve(board, end_square, 17);
+	if (shallow_search > 0) {
+		return shallow_search;
+	}
+
+	return turns_to_solve(board, end_square, max_steps);
+}
+
+zzt_board grow_board(double sparsity, coord player_pos, coord end_square, coord size) {
+	bool found_board = false;
+
+	zzt_board out_board(player_pos, size);
+	zzt_board recordholder = out_board;
+	int record = -1;
+
+	for (int i = 0;!found_board; ++i) {
+		if (i % 16 == 15) { sparsity = 1 - (1 - sparsity)*0.9;}
+		std::cout << i << ", " << sparsity << "   \r" << std::flush;
+
+		out_board = zzt_board(player_pos, size);
+
+		for (int i = 0; i < 1000; ++i) {
+			zzt_board mutation = out_board;
+			fill_puzzle(mutation, sparsity);
+
+			int candidate_quality = poor_mans_idfs_turns_to_solve(mutation, end_square);
+			if (candidate_quality > record) {
+				found_board = true;
+				record = candidate_quality;
+				recordholder = mutation;
+				out_board = mutation;
+			}
+		}
+	}
+
+	return recordholder;
+}
+
+// TODO: Get the following stats:
+//		- number of solutions
+//		- number of pushes done in the PV (as opposed to
+//			just walking on empties)
+//		- number of tiles pushed/discrepancy from initial state
+//		- number of direction reversals done in the PV (~ RLE coding length) [DONE]
+//		- departure from naive guess at each PV step (counterintuitive moves)
+//		- length (well duh :P)
+// Then some linear programming/curve fitting should give a difficulty
+// estimate. I may include a bunch of variables and then use good old
+// compressed sensing, really... Also include the "way too simple"
+// puzzles where the player is in a corner or the exit is in one.
+
+// https://sci-hub.st/http://dx.doi.org/10.1109/cig.2015.7317913
+// If I use ratings to get feedback, I should remember that they're
+// potentially arbitrarily affinely scaled.
+
+// Also add this functionality:
+//		- Store best move in the transposition table.
+//		- IDFS based on this
+//		- Move reordering based on greedy heuristic
+
+// I can't reproduce generated boards, and there seems to be a bug where some
+// solutions are much too long (or alternatively, it fails to find a short
+// solution). Both of these need to be fixed: I have to unify the random number
+// generators so I can reproduce the boards -- and probably just create a random
+// puzzle, not *grow* them, as the latter depends on the solve() function...
+// TODO? Is there any chance I can do this by first of April?
+
+/////////////////////////// Statistics ////////////////////
+
+// Returns the number of turns required (e.g. north to east to south is
+// three turns). Presumably more complex puzzles have more turns.
+int get_path_turns(const std::vector<direction> & solution) {
+	direction cur_dir = IDLE;
+	int turns_so_far = 0;
+
+	for (direction d: solution) {
+		if (d != cur_dir) {
+			++turns_so_far;
+			cur_dir = d;
+		}
+	}
+
+	return turns_so_far;
+}
+
+// Calculate how much a move changes a board.
+int count_changes(zzt_board before, zzt_board after) {
+
+	coord where;
+	int changes = 0;
+
+	for (where.y = 0; where.y < before.get_size().y; ++where.y) {
+		for (where.x = 0; where.x < before.get_size().x; ++where.x) {
+			if (before.get_tile_at(where) != after.get_tile_at(where)) {
+				++changes;
+			}
+		}
+	}
+
+	return changes;
+}
+
+// Count changes along as the player moves on a path.
+// The board is really const because we'll undo every move we do,
+// but C++ doesn't know that.
+std::vector<int> count_changes(zzt_board board,
+	const std::vector<direction> & path) {
+
+	std::vector<int> changes;
+
+	for (direction d: path) {
+		zzt_board before = board;
+		if (!board.do_move(d)) {
+			throw std::runtime_error("count_changes: Can't make that move!");
+		}
+		changes.push_back(count_changes(before, board));
+	}
+
+	for (direction d: path) {
+		board.undo_move();
+	}
+
+	return changes;
+}
+
+// Count the number of changes between the starting and the
+// end position.
+int count_start_end_changes(zzt_board board,
+	const std::vector<direction> & path) {
+
+	zzt_board before = board;
+
+	for (direction d: path) {
+		if (!board.do_move(d)) {
+			throw std::runtime_error("count_changes: Can't make that move!");
+		}
+	}
+
+	return count_changes(before, board);
+}
+
+// Get the fraction of tiles that are not empty.
+double get_density(const zzt_board & board) {
+	coord where;
+	int nonempty = 0;
+
+	for (where.y = 0; where.y < board.get_size().y; ++where.y) {
+		for (where.x = 0; where.x < board.get_size().x; ++where.x) {
+			if (board.get_tile_at(where) != T_EMPTY) {
+				++nonempty;
+			}
+		}
+	}
+
+	return nonempty/(double)(board.get_size().x * board.get_size().y);
+}
+
+// A move is "counterintuitive" or "unusual" if it
+// isn't one of the moves that go directly towards the target.
+
+int count_unusual_moves(const zzt_board & board,
+	const coord & end_square,
+	const std::vector<direction> & solution_path) {
+
+	int unusual_moves = 0;
+	coord pos = board.player_pos;
+
+	for (direction dir_taken: solution_path) {
+		// For each move, check if the distance after making this
+		// move is the same as after making the naive move. NOTE:
+		// This deliberately doesn't check if the naive move
+		// direction is blocked.
+		coord after_move = pos + board.get_delta(dir_taken);
+		int after_dist = manhattan_dist(after_move, end_square);
+
+		bool move_is_naive = true;
+
+		for (direction other_dir: {EAST, WEST, NORTH, SOUTH}) {
+			if (other_dir == dir_taken) { continue; }
+
+			int candidate_dist = manhattan_dist(
+				pos + board.get_delta(other_dir), end_square);
+			move_is_naive &= (candidate_dist >= after_dist);
+		}
+
+		if (!move_is_naive) {
+			++unusual_moves;
+		}
+
+		// move to the next position and repeat.
+		pos = after_move;
+	}
+
+	return unusual_moves;
+}
+
+double get_unusual_dir_proportion(const zzt_board & board,
+	const coord & end_square,
+	const std::vector<direction> & solution_path) {
+
+	return count_unusual_moves(board, end_square,
+		solution_path)/(double)solution_path.size();
+}
+
+// Euclidean distance. Yeah, I know the Manhattan distance is
+// for coordinates and this is for vectors, it's ugly. Perhaps
+// I'll fix it later? TODO?
+double euclidean_dist(const std::vector<double> & x,
+	const std::vector<double> & y) {
+
+	double squared_error = 0;
+
+	for (size_t i = 0; i < std::min(x.size(), y.size()); ++i) {
+		if (!finite(x[i]) || !finite(y[i])) {
+			throw std::invalid_argument("Trying to take distance of non-finite values");
+		}
+		squared_error += (x[i]-y[i]) * (x[i]-y[i]);
+	}
+
+	return sqrt(squared_error);
+}
+
+// A given number of times, create a vector that has random
+// values between minimum and maximum on each dimension, then
+// pick the vector closest to this random vector that has not
+// already been picked. Finally, print them all out. This is
+// sort of a poor man's grid but not really, but should help the
+// linear regression determine effects better than if I were to
+// just randomly sample all results seen (which are heavily skewed).
+void print_useful_stats(size_t desired_num_points,
+	const std::map<int, std::vector<double> > & stats_by_id) {
+
+	// If we asked for more points than there are, fix that.
+	desired_num_points = std::min(desired_num_points,
+		stats_by_id.size());
+
+	size_t dim = stats_by_id.begin()->second.size();
+
+	std::vector<double>
+		minima(dim, std::numeric_limits<double>::infinity()),
+		maxima(dim, -std::numeric_limits<double>::infinity());
+
+	std::set<int> seen_IDs;
+	size_t i, j;
+
+	for (auto pos = stats_by_id.begin(); pos != stats_by_id.end();
+		++pos) {
+		for (i = 0; i < dim; ++i) {
+			minima[i] = std::min(minima[i], pos->second[i]);
+			maxima[i] = std::max(maxima[i], pos->second[i]);
+		}
+	}
+
+	for (size_t point_idx = 0; point_idx < desired_num_points; ++point_idx) {
+		double record = std::numeric_limits<double>::infinity();
+		auto recordholder = stats_by_id.end();
+
+		std::vector<double> random_stat;
+		for (i = 0; i < dim; ++i) {
+			random_stat.push_back(minima[i] + drand48() * (maxima[i] - minima[i]));
+		}
+
+		for (auto pos = stats_by_id.begin(); pos != stats_by_id.end();
+			++pos) {
+			if (seen_IDs.find(pos->first) != seen_IDs.end()) {
+				continue;
+			}
+
+			if (euclidean_dist(random_stat, pos->second) < record) {
+				record = euclidean_dist(random_stat, pos->second);
+				recordholder = pos;
+			}
+		}
+
+		if (recordholder == stats_by_id.end()) {
+			throw std::logic_error("Found no records!");
+		}
+
+		seen_IDs.insert(recordholder->first);
+		std::cout << "[" << recordholder->first << "]: ";
+
+		// Copy the variables.
+		std::copy(recordholder->second.begin(), recordholder->second.end(),
+			std::ostream_iterator<double>(std::cout, " "));
+		std::cout << "\n";
+	}
+}
+
+int main() {
+	// We gather statistics about the boards as potential inputs to
+	// a linear model, to get a good idea of what makes a board hard.
+	// Because preparing a ton of puzzles is tedious, we should pick ones
+	// that have different values of the inputs. This map keeps track
+	// of them.
+	std::map<int, std::vector<double> > stats_by_id;
+	std::unordered_map<uint64_t, int> transpositions;
+
+	for (int i = 9000; i < 1e7; ++i) {
+
+		srand48(i);
+		srand(i);
+		srandom(i);
+
+		int span = 2 + random() % 6;
+
+		coord max(4 + random() % 4, 4 + random() % 4);
+		coord player_pos(0, 3);
+		//coord end_square(max.x-1, 3);
+		coord end_square(max.x-1, max.y-1);
+
+		// didn't use to have the 0.67x
+		double sparsity = /*0.67 **/ round(drand48()*100)/100.0;
+
+		transpositions.clear();
+
+		zzt_board test_board =
+			create_random_puzzle(sparsity, player_pos, max);
+		if (i % 2 == 0) {
+			test_board = grow_board(sparsity, player_pos, end_square, max);
+		}
+
+		/*return(-1);*/
+
+		// TODO: Report the actual number of non-spaces.
+		int max_steps = MAX_DEPTH;
+
+		std::vector<std::vector<direction> > pv(max_steps+1,
+			std::vector<direction>(max_steps+1, IDLE));
+
+		uint64_t nodes_visited = 0;
+
+		eval_score result = solve(test_board, end_square,
+			pv, transpositions, max_steps, nodes_visited);
+
+		//int score = idfs_find_solution(test_board, end_square, 30);
+
+		if (result.score > 0 ) { // && result.recursion_level < max_steps - 5 /* 14 */) {
+			transpositions.clear();
+
+			std::vector<direction> solution = get_solution(pv);
+			// Get some statistics.
+			std::vector<int> changes_with_sol = count_changes(test_board,
+				solution);
+			double max_change = *std::max_element(changes_with_sol.begin(),
+				changes_with_sol.end());
+			double mean_change = std::accumulate(changes_with_sol.begin(),
+				changes_with_sol.end(), 0) / (double)changes_with_sol.size();
+			double solution_turns = get_path_turns(solution);
+			double start_finish_changes = count_start_end_changes(test_board, solution);
+			double unusual_moves = count_unusual_moves(test_board, end_square, solution);
+			double unusual_proportion = get_unusual_dir_proportion(test_board, end_square,
+				solution);
+			double real_board_sparsity = 1 - get_density(test_board);
+
+			std::vector<double> stats = {
+														// TODO, add intercept and update
+														// these values.
+				(double)solution.size(),				// first guess: -109.538
+				(double)max.x,							// first guess: -64.6429
+				(double)max.y,							// first guess: -119.6481
+				(double)(max.y, max.x * max.y),			// first guess: 44.00
+				solution_turns,							// first guess: 82.425
+				mean_change,							// first guess: 1440.206
+				max_change,								// first guess: -79.979
+				start_finish_changes,					// first guess: -76.2424
+				unusual_moves,							// first guess: 37.38125
+				unusual_proportion,						// first guess: 2505.12601424
+				real_board_sparsity,					// first guess: 968.24895351
+				(double)nodes_visited,
+				log(nodes_visited)};
+
+			stats_by_id[i] = stats;
+
+			std::cout << "Index is " << i << std::endl;
+			test_board.print();
+			std::cout << "Index " << i << ": size: " << max.x << ", " << max.y
+				<< " = " << max.x * max.y << std::endl;
+			std::cout << "Index " << i << ": Solution score: " << result.score << std::endl;
+			std::cout << "Index " << i << ": turns in solution " << solution_turns
+				<< std::endl;
+			std::cout << "Index " << i << ": Changes: mean: " << mean_change
+				<< " max: " << max_change << std::endl;
+			std::cout << "Index " << i << ": Start-finish change count: " <<
+				start_finish_changes << std::endl;
+			std::cout << "Index " << i << ": Unusual moves " <<
+				unusual_moves << std::endl;
+			std::cout << "Index " << i << ": Unusual move proportion " <<
+				unusual_proportion << std::endl;
+			std::cout << "Index " << i << ": Real sparsity is "
+				<< real_board_sparsity << ", solution in " << solution.size()
+				<< "/" << result.recursion_level << ": ";
+			print_solution(solution);
+
+			std::cout << "Index " << i << ": nodes visited: " << nodes_visited << std::endl;
+
+			std::cout << "Index " << i << ": summary: ";
+			std::copy(stats.begin(), stats.end(),
+				std::ostream_iterator<double>(std::cout, " "));
+			std::cout << std::endl;
+
+			print_useful_stats(20, stats_by_id);
+		}
+	}
+}
