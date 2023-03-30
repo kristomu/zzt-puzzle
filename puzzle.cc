@@ -142,36 +142,6 @@ const int MAX_DEPTH = 30;
 	return turns_to_solve(board, end_square, max_steps);
 }*/
 
-/*zzt_board grow_board(double sparsity, coord player_pos, coord end_square, coord size) {
-	bool found_board = false;
-
-	zzt_board out_board(player_pos, size);
-	zzt_board recordholder = out_board;
-	int record = -1;
-
-	for (int i = 0;!found_board; ++i) {
-		if (i % 16 == 15) { sparsity = 1 - (1 - sparsity)*0.9;}
-		std::cout << i << ", " << sparsity << "   \r" << std::flush;
-
-		out_board = zzt_board(player_pos, size);
-
-		for (int i = 0; i < 1000; ++i) {
-			zzt_board mutation = out_board;
-			fill_puzzle(mutation, sparsity);
-
-			int candidate_quality = poor_mans_idfs_turns_to_solve(mutation, end_square);
-			if (candidate_quality > record) {
-				found_board = true;
-				record = candidate_quality;
-				recordholder = mutation;
-				out_board = mutation;
-			}
-		}
-	}
-
-	return recordholder;
-}*/
-
 // TODO: Get the following stats:
 //		- number of solutions
 //		- number of pushes done in the PV (as opposed to
@@ -447,9 +417,10 @@ int main() {
 
 		zzt_board test_board =
 			create_indexed_puzzle(sparsity, player_pos, max, i);
-		/*if (i % 2 == 0) {
-			test_board = grow_board(sparsity, player_pos, end_square, max);
-		}*/
+		if (i % 2 == 0) {
+			test_board = grow_indexed_board(player_pos, end_square,
+				max, MAX_DEPTH, minmax, i);
+		}
 
 		/*return(-1);*/
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "solver/solver.h"
 #include "board.h"
 #include <random>
 
@@ -17,4 +18,12 @@ zzt_board create_random_puzzle(double sparsity,
 
 zzt_board create_indexed_puzzle(double sparsity,
 	coord player_pos, coord max_size,
+	uint64_t index);
+
+zzt_board grow_board(coord player_pos,
+	coord end_square, coord size, int recursion_level,
+	solver & guiding_solver, std::mt19937 & rng);
+
+zzt_board grow_indexed_board(coord player_pos, coord end_square,
+	coord size, int recursion_level, solver & guiding_solver,
 	uint64_t index);
