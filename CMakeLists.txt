@@ -12,10 +12,12 @@ set(PROG_NAME "zzt-puzzle")
 # There isn't actually any pragma onces outside headers, but my LLVM IDE
 # integration flags header pragmas as non-header pragmas due to a known bug.
 set(CMAKE_CXX_FLAGS
-	"-O3 -mtune=native -march=native -Wall -Werror -Wno-pragma-outside-header")
+	"-O3 -mtune=native -march=native -Wall -Werror -Wextra \
+	 -Wno-pragma-once-outside-header")
 
 add_executable(${PROG_NAME}
 	board.cc
 	coord.cc
 	generator.cc
-	puzzle.cc)
+	puzzle.cc
+	solver/solver.cc)

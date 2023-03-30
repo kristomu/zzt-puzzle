@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdexcept>
+#include <cmath>
 
 // A simple 2D coordinate class used to handle tile positions.
 
@@ -40,6 +41,10 @@ class coord {
 
 		bool operator!=(const coord & other) {
 			return !(*this == other);
+		}
+
+		double manhattan_dist(const coord & other) const {
+			return std::fabs(x-other.x) + std::fabs(y-other.y);
 		}
 };
 
