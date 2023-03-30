@@ -12,6 +12,10 @@
 #include <map>
 #include <set>
 
+#include "coord.h"
+#include "board.h"
+#include "generator.h"
+
 // Things that need to be done:
 //	- REFACTORING. Board definitely deserves its own file.
 //		And the board generator should be put somewhere and
@@ -26,373 +30,6 @@
 //	- The TODO in solve regarding early pruning (alpha beta analog) where if the
 //		solution is 4 moves out and we have 10 moves left, set the moves left to 4
 //		because there's no point in going deeper.
-
-enum tile {T_EMPTY, T_PLAYER, T_SOLID, T_SLIDEREW, T_SLIDERNS, T_BOULDER };
-enum direction {NORTH, SOUTH, EAST, WEST, IDLE};
-
-const int NUM_TILE_TYPES = 6;
-
-class coord {
-	public:
-		int x;
-		int y;
-
-		coord() { x = 0; y = 0; }
-		coord(int x_in, int y_in) { x = x_in; y = y_in; }
-
-		// boilerplate
-
-		coord operator+(const coord & rhs) const {
-			return coord(x + rhs.x, y + rhs.y);
-		}
-
-		coord operator-(const coord & rhs) const {
-			return coord(x - rhs.x, y - rhs.y);
-		}
-
-		coord operator+=(const coord & rhs) {
-			x += rhs.x;
-			y += rhs.y;
-			return *this;
-		}
-
-		coord operator-=(const coord & rhs) {
-			x -= rhs.x;
-			y -= rhs.y;
-			return *this;
-		}
-
-		bool operator==(const coord & other) {
-			return x == other.x && y == other.y;
-		}
-
-		bool operator!=(const coord & other) {
-			return !(*this == other);
-		}
-};
-
-// This one takes a bit of explaining. When the player moves,
-// he may push a number of tiles in the direction he's moving.
-// These tiles are then all shifted up one to the first empty
-// space (if any), otherwise the move is impossible. Because
-// copying the structure each time we descend in minmax/alpha-beta
-// would be too slow, we need to be able to undo the move, which
-// is exactly the same thing as pushing the whole stack, player
-// included, one step in the opposite direction.
-// Thus we need to know where to start pushing, and what direction
-// the player moved when causing the push; this is what that's for.
-
-struct push_info {
-	coord last_push_destination;
-	coord player_direction;
-};
-
-class zzt_board {
-	private:
-		coord size;
-
-		// Only access this with set() and get() and in the
-		// constructor!
-		std::vector<std::vector<tile> > board_p;
-
-		// Values for Zobrist hashing.
-		std::vector<std::vector<std::vector<uint64_t> > > zobrist_values;
-		uint64_t hash;
-		void generate_zobrist();
-
-		bool pushable(const coord & pos, const coord & delta) const;
-
-		// out_terminus is the last position we push something onto.
-		// See the comment below about last_push_destination.
-		bool push(const coord & current_pos, const coord & delta,
-			coord & out_terminus);
-		bool push(coord & current_pos, direction dir,
-			coord & out_terminus) {
-
-			return push(current_pos, get_delta(dir), out_terminus);
-		}
-
-
-	public:
-		coord player_pos;
-
-		// Shouldn't be inside board, but oh well.
-		coord get_delta(direction dir) const;
-
-		coord get_size() const { return size; }
-		uint64_t get_hash() const { return hash; }
-
-		// Pretend that the playing field is surrounded by
-		// infinitely many solids.
-		tile get_tile_at(const coord & where) const {
-			if (where.x < 0 || where.y < 0) {
-				return T_SOLID;
-			}
-			if (where.x >= size.x || where.y >= size.y) {
-				return T_SOLID;
-			}
-
-			return board_p[where.y][where.x];
-		}
-
-		void set(const coord & where, tile what) {
-			if (where.x < 0 || where.y < 0 ||
-				where.x >= size.x || where.y >= size.y) {
-				throw std::runtime_error("Set: Tried to set outside board!");
-			}
-			// Unhash the current tile at this position, set the new
-			// tile, and hash it.
-			hash ^= zobrist_values[where.y][where.x][
-				board_p[where.y][where.x]];
-			board_p[where.y][where.x] = what;
-
-			hash ^= zobrist_values[where.y][where.x][(int)what];
-		}
-
-		void swap(const coord & a, const coord & b) {
-			tile backup = get_tile_at(a);
-			set(a, get_tile_at(b));
-			set(b, backup);
-		}
-
-		zzt_board(coord player_pos_in, coord board_size) {
-			size = board_size;
-			generate_zobrist();
-
-			board_p = std::vector<std::vector<tile > >(board_size.y,
-				std::vector<tile>(board_size.x, T_EMPTY));
-			hash = 0;
-			// Hash in the Zobrist values of all the empties.
-			for (size_t y = 0; y < size.y; ++y) {
-				for (size_t x = 0; x < size.x; ++x) {
-					hash ^= zobrist_values[y][x][(int)T_EMPTY];
-				}
-			}
-
-			player_pos = player_pos_in;
-			set(player_pos, T_PLAYER);
-		}
-
-
-		std::vector<push_info> push_log;
-		std::vector<push_info>::const_iterator push_log_pos; // how do we do "no push yet"?
-
-		// Move the player in the direction given
-		bool do_move(direction dir);
-
-		// Move the player in the opposite direction
-		void undo_move();
-
-		void print() const;
-
-		bool operator==(const zzt_board & other) {
-			if (other.get_size() != get_size()) { return false; }
-			if (hash != other.hash) { return false; }
-
-			coord pos;
-			for (pos.y = 0; pos.y < get_size().y; ++pos.y) {
-				for (pos.x = 0; pos.x < get_size().x; ++pos.x) {
-					if(get_tile_at(pos) != other.get_tile_at(pos)) {
-						return false;
-					}
-				}
-			}
-
-			return true;
-		}
-
-		bool operator!=(const zzt_board & other) {
-			return !(*this == other);
-		}
-};
-
-void zzt_board::generate_zobrist() {
-	// The vector contains one value for each possible tile at each
-	// possible location. TODO later? Use a custom random function
-	// with a fixed seed to make this completely deterministic and
-	// debuggable.
-	zobrist_values = std::vector<std::vector<std::vector<uint64_t> > >(
-		size.y, std::vector<std::vector<uint64_t> >(size.x,
-		std::vector<uint64_t>(NUM_TILE_TYPES, 0)));
-
-	for (auto & row: zobrist_values) {
-		for (auto & column: row) {
-			for (uint64_t & cell: column) {
-				cell = (random() << 32LL) + random();
-			}
-		}
-	}
-}
-
-coord zzt_board::get_delta(direction dir) const {
-	switch(dir) {
-		case NORTH: return coord(0, -1);
-		case SOUTH: return coord(0, 1);
-		case EAST: return coord(1, 0);
-		case WEST: return coord(-1, 0);
-		default: throw std::logic_error("get_delta: Invalid direction!");
-	}
-}
-
-bool zzt_board::pushable(const coord & pos, const coord & delta) const {
-	tile at_pos = get_tile_at(pos);
-
-	switch(at_pos) {
-		case T_EMPTY: return false;
-		case T_PLAYER: return true;
-		case T_SOLID: return false;
-		// DOH!! I couldn't understand why this wasn't working. I was
-		// using pos instead of delta.
-		case T_SLIDEREW: return delta.y == 0; // can't be moved vertically
-		case T_SLIDERNS: return delta.x == 0; // can't be moved horizontally
-		case T_BOULDER: return true;
-		default: throw std::runtime_error("Pushable: unknown tile type!");
-	}
-}
-
-bool zzt_board::push(const coord & current_pos, const coord & delta,
-	coord & out_terminus) {
-	// Check if the current tile is pushable.
-	if (!pushable(current_pos, delta)) {
-		 return false;
-	}
-
-	// Check if the destination tile is an empty: if so, we just have
-	// to move the current tile over there.
-	coord dest_tile = current_pos + delta;
-	if (get_tile_at(dest_tile) == T_EMPTY) {
-		swap(dest_tile, current_pos);
-		out_terminus = dest_tile;
-		return true;
-	}
-
-	// Check if the destination tile is pushable. If so, recurse.
-	// If we get a true result, then there will be an empty at the
-	// destination tile and we can move the source tile over there.
-	if (!pushable(dest_tile, delta)) {
-		return false;
-	}
-
-	if (push(dest_tile, delta, out_terminus)) {
-		swap(dest_tile, current_pos);
-		return true;
-	} else {
-		return false;
-	}
-}
-
-bool zzt_board::do_move(direction dir) {
-	// Try to push in the direction given. If it works, update the
-	// player position and set the terminus and direction info.
-	// Otherwise just return false.
-
-	coord out_terminus;
-	if (push(player_pos, dir, out_terminus)) {
-		player_pos += get_delta(dir);
-
-		push_info this_push;
-		this_push.last_push_destination = out_terminus;
-		this_push.player_direction = get_delta(dir);
-		push_log.push_back(this_push);
-
-		return true;
-	} else {
-		return false;
-	}
-}
-
-void zzt_board::undo_move() {
-	// First move the player in the opposite direction, leaving
-	// a gap on the player side of the chain of pushables that
-	// we're undoing.
-
-	// Then push from the terminus in the opposite direction of
-	// the player's earlier movement, which will reset every tile
-	// between the player and the terminus.
-
-	// This will throw an exception if anything strange happens.
-	coord last_move_dir_delta = push_log.rbegin()->player_direction;
-	coord opposite_delta = coord(0, 0) - last_move_dir_delta;
-	coord player_new_pos = player_pos + opposite_delta;
-
-	if (get_tile_at(player_new_pos) != T_EMPTY) {
-		throw std::logic_error("Trying to undo move but player can't retrace his steps!");
-	}
-	if (get_tile_at(player_pos) != T_PLAYER) {
-		throw std::logic_error("Player pos is not correct!");
-	}
-
-	set(player_pos, T_EMPTY);
-	set(player_new_pos, T_PLAYER);
-
-	coord throwaway, chain_end = push_log.rbegin()->last_push_destination;
-
-	// Only push the rest of the chain if there's anything to it.
-	// If it's just the player, then skip.
-	if (chain_end != player_pos) {
-		if (!push(chain_end, opposite_delta, throwaway)) {
-			throw std::logic_error("Can't push tiles back into original place!");
-		}
-	}
-
-	player_pos = player_new_pos;
-
-	push_log.pop_back();
-}
-
-void zzt_board::print() const {
-	coord pos;
-	for (pos.y = 0; pos.y < size.y; ++pos.y) {
-		for (pos.x = 0; pos.x < size.x; ++pos.x) {
-			switch(get_tile_at(pos)) {
-				case T_EMPTY: std::cout << "."; break;
-				case T_SOLID: std::cout << "#"; break;
-				case T_PLAYER: std::cout << "@"; break;
-				case T_SLIDEREW: std::cout << ">"; break;
-				case T_SLIDERNS: std::cout << "^"; break;
-				case T_BOULDER: std::cout << "x"; break;
-				default: std::cout << "?"; break;
-			}
-		}
-		std::cout << std::endl;
-	}
-}
-
-// Fill some empty tiles with non-empty tiles: for each
-// empty tile, leave it alone with probability sparsity,
-// or fill it with probability 1-sparsity.
-void fill_puzzle(zzt_board & board, double sparsity) {
-
-	coord pos;
-	for (pos.y = 0; pos.y < board.get_size().y; ++pos.y) {
-		for (pos.x = 0; pos.x < board.get_size().x; ++pos.x) {
-			if(board.get_tile_at(pos) != T_EMPTY) {
-				continue;
-			}
-			if (drand48() < sparsity) { continue; }
-
-			switch(1 + random()%4) {
-				default:
-				case 0: board.set(pos, T_EMPTY); break;
-				// TODO: enable this ???
-				case 1: //board.set(pos, T_SOLID); break;
-				case 2: board.set(pos, T_SLIDEREW); break;
-				case 3: board.set(pos, T_SLIDERNS); break;
-				case 4: board.set(pos, T_BOULDER); break;
-			}
-		}
-	}
-}
-
-zzt_board create_random_puzzle(double sparsity,
-	coord player_pos, coord max_size) {
-
-	zzt_board out_board(player_pos, max_size);
-
-	fill_puzzle(out_board, sparsity);
-	return out_board;
-}
-
 
 void test_one() {
 	coord max(random()%10 + 2, random()%10 + 2);
@@ -429,7 +66,7 @@ void test_one() {
 
 }
 
-// Get the L1 distance. We're going to use this as an evaluation function
+// Get the L1 distance. We'll use this as an evaluation function
 // for the lack of anything better.
 double manhattan_dist(const coord & a, const coord & b) {
 	return fabs(a.x-b.x) + fabs(a.y-b.y);
@@ -509,8 +146,11 @@ eval_score solve(zzt_board & board, const coord & end_square,
 	}
 
 	// Quick and dirty hack to keep size limited so we don't crash with
-	// an out of memory error.
-	if (transpositions.size() < 1e9) {
+	// an out of memory error. This should really be done by using better
+	// logic, e.g. take the hash mod something and if it's already there
+	// and has a different untruncated value, only replace if our current
+	// depth is less than its depth.
+	if (transpositions.size() < 2e7) {
 		transpositions[board.get_hash()] = recursion_level;
 	}
 
@@ -809,7 +449,7 @@ int count_unusual_moves(const zzt_board & board,
 		// move is the same as after making the naive move. NOTE:
 		// This deliberately doesn't check if the naive move
 		// direction is blocked.
-		coord after_move = pos + board.get_delta(dir_taken);
+		coord after_move = pos + get_delta(dir_taken);
 		int after_dist = manhattan_dist(after_move, end_square);
 
 		bool move_is_naive = true;
@@ -818,7 +458,7 @@ int count_unusual_moves(const zzt_board & board,
 			if (other_dir == dir_taken) { continue; }
 
 			int candidate_dist = manhattan_dist(
-				pos + board.get_delta(other_dir), end_square);
+				pos + get_delta(other_dir), end_square);
 			move_is_naive &= (candidate_dist >= after_dist);
 		}
 
@@ -934,7 +574,7 @@ int main() {
 	std::map<int, std::vector<double> > stats_by_id;
 	std::unordered_map<uint64_t, int> transpositions;
 
-	for (int i = 9000; i < 1e7; ++i) {
+	for (int i = 0; i < 1e7; ++i) {
 
 		srand48(i);
 		srand(i);
