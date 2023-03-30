@@ -5,14 +5,21 @@
 #include <iostream>
 #include <vector>
 
-enum tile {T_EMPTY, T_PLAYER, T_SOLID, T_SLIDEREW, T_SLIDERNS, T_BOULDER };
+enum tile				{T_EMPTY, T_PLAYER, T_SOLID,
+						 T_SLIDEREW, T_SLIDERNS, T_BOULDER};
+
+const tile tiles[] =	{T_EMPTY, T_PLAYER, T_SOLID,
+						 T_SLIDEREW, T_SLIDERNS, T_BOULDER};
+const tile obstacles[] =				  { T_SOLID,
+						 T_SLIDEREW, T_SLIDERNS, T_BOULDER};
 
 const int NUM_TILE_TYPES = 6;
+const int NUM_OBSTACLES = 4;
 
 // This one takes a bit of explaining. When the player moves,
 // he may push a number of tiles in the direction he's moving.
 // These tiles are then all shifted up one to the first empty
-// space (if any), otherwise the move is impossible. Because
+// space (if any; otherwise the move is impossible). Because
 // copying the structure each time we descend in minmax/alpha-beta
 // would be too slow, we need to be able to undo the move, which
 // is exactly the same thing as pushing the whole stack, player
@@ -98,8 +105,8 @@ class zzt_board {
 				std::vector<tile>(board_size.x, T_EMPTY));
 			hash = 0;
 			// Hash in the Zobrist values of all the empties.
-			for (size_t y = 0; y < size.y; ++y) {
-				for (size_t x = 0; x < size.x; ++x) {
+			for (int y = 0; y < size.y; ++y) {
+				for (int x = 0; x < size.x; ++x) {
 					hash ^= zobrist_values[y][x][(int)T_EMPTY];
 				}
 			}

@@ -35,7 +35,8 @@ void test_one() {
 	coord max(random()%10 + 2, random()%10 + 2);
 	coord player_pos(random() % max.x, random() % max.y);
 
-	zzt_board test_board = create_random_puzzle(0.8, player_pos, max);
+	// TODO: make random
+	zzt_board test_board = create_indexed_puzzle(0.8, player_pos, max, 1);
 
 	//std::cout << "===============" << std::endl;
 	//std::cout << "Starting off:" << std::endl;
@@ -285,7 +286,7 @@ int poor_mans_idfs_turns_to_solve(zzt_board board, coord end_square) {
 	return turns_to_solve(board, end_square, max_steps);
 }
 
-zzt_board grow_board(double sparsity, coord player_pos, coord end_square, coord size) {
+/*zzt_board grow_board(double sparsity, coord player_pos, coord end_square, coord size) {
 	bool found_board = false;
 
 	zzt_board out_board(player_pos, size);
@@ -313,7 +314,7 @@ zzt_board grow_board(double sparsity, coord player_pos, coord end_square, coord 
 	}
 
 	return recordholder;
-}
+}*/
 
 // TODO: Get the following stats:
 //		- number of solutions
@@ -395,7 +396,7 @@ std::vector<int> count_changes(zzt_board board,
 		changes.push_back(count_changes(before, board));
 	}
 
-	for (direction d: path) {
+	for (size_t i = 0; i < path.size(); ++i) {
 		board.undo_move();
 	}
 
@@ -520,7 +521,7 @@ void print_useful_stats(size_t desired_num_points,
 		maxima(dim, -std::numeric_limits<double>::infinity());
 
 	std::set<int> seen_IDs;
-	size_t i, j;
+	size_t i;
 
 	for (auto pos = stats_by_id.begin(); pos != stats_by_id.end();
 		++pos) {
@@ -580,23 +581,20 @@ int main() {
 		srand(i);
 		srandom(i);
 
-		int span = 2 + random() % 6;
-
 		coord max(4 + random() % 4, 4 + random() % 4);
 		coord player_pos(0, 3);
 		//coord end_square(max.x-1, 3);
 		coord end_square(max.x-1, max.y-1);
 
-		// didn't use to have the 0.67x
-		double sparsity = /*0.67 **/ round(drand48()*100)/100.0;
+		double sparsity = round(drand48()*100)/100.0;
 
 		transpositions.clear();
 
 		zzt_board test_board =
-			create_random_puzzle(sparsity, player_pos, max);
-		if (i % 2 == 0) {
+			create_indexed_puzzle(sparsity, player_pos, max, i);
+		/*if (i % 2 == 0) {
 			test_board = grow_board(sparsity, player_pos, end_square, max);
-		}
+		}*/
 
 		/*return(-1);*/
 
@@ -631,20 +629,22 @@ int main() {
 				solution);
 			double real_board_sparsity = 1 - get_density(test_board);
 
+			// These are used for my attempts to create a model for
+			// how difficult a puzzle is to solve; the more the better
+			// (as long as I can endure playing all the puzzles to provide
+			// the required data).
 			std::vector<double> stats = {
-														// TODO, add intercept and update
-														// these values.
-				(double)solution.size(),				// first guess: -109.538
-				(double)max.x,							// first guess: -64.6429
-				(double)max.y,							// first guess: -119.6481
-				(double)(max.y, max.x * max.y),			// first guess: 44.00
-				solution_turns,							// first guess: 82.425
-				mean_change,							// first guess: 1440.206
-				max_change,								// first guess: -79.979
-				start_finish_changes,					// first guess: -76.2424
-				unusual_moves,							// first guess: 37.38125
-				unusual_proportion,						// first guess: 2505.12601424
-				real_board_sparsity,					// first guess: 968.24895351
+				(double)solution.size(),
+				(double)max.x,
+				(double)max.y,
+				(double)(max.x * max.y),
+				solution_turns,
+				mean_change,
+				max_change,
+				start_finish_changes,
+				unusual_moves,
+				unusual_proportion,
+				real_board_sparsity,
 				(double)nodes_visited,
 				log(nodes_visited)};
 
