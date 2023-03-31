@@ -93,7 +93,19 @@ zzt_board grow_board(coord player_pos, coord end_square,
 	coord size, int recursion_level, solver & guiding_solver,
 	std::mt19937 & rng) {
 
+	// One of the biggest wastes of time in this calculation
+	// is to determine if a board is solvable, because we need
+	// to (worst case) extend up to the maximum recursion level,
+	// and there's no way to tell something is unsolvable short
+	// of trying everythin.
+
+	// Therefore, we use a reduced board where everything but
+	// the immediate environment around the exit is empty. If
+	// the reduced board (which has a considerably smaller
+	// state space) is unsolvable, then so is the full board.
+
 	zzt_board board(player_pos, size);
+	zzt_board reduced_board(player_pos, size);
 
 	std::vector<coord_and_tile> empty_coord_assignments =
 		get_empty_coord_assignments(board, rng);
@@ -111,6 +123,15 @@ zzt_board grow_board(coord player_pos, coord end_square,
 		}
 
 		board.set(new_coord_tile.first, new_coord_tile.second);
+
+		// We always admit solids because they can only reduce
+		// the state space.
+		if (new_coord_tile.first.manhattan_dist(
+			end_square) < 6 || new_coord_tile.second == T_SOLID) {
+			reduced_board.set(new_coord_tile.first,
+				new_coord_tile.second);
+		}
+
 		++filled_squares;
 
 		std::cout << "grow_board: " << filled_squares
@@ -127,8 +148,14 @@ zzt_board grow_board(coord player_pos, coord end_square,
 		// so remove it and return; if we succeed, it's still solvable,
 		// so add another tile.
 		do {
-			result = guiding_solver.solve(board, end_square,
+			std::cout << "grow_board/IDFS: " << current_depth << "  \r" << std::flush;
+			// First test the reduced board.
+			result = guiding_solver.solve(reduced_board, end_square,
 				current_depth, nodes_visited);
+			if (result.score > 0) {
+				result = guiding_solver.solve(board, end_square,
+					current_depth, nodes_visited);
+			}
 			if (result.score <= 0) {
 				++current_depth;
 			}

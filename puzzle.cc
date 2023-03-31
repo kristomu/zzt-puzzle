@@ -83,64 +83,7 @@ void print_solution(const std::vector<direction> & solution) {
 	std::cout << std::endl;
 }
 
-// Iterative deepening.
-// I should provide the PV later...
-/*
-int idfs_solve(zzt_board & board, const coord & end_square,
-	int max_recursion_level) {
-
-	int score;
-
-	for (int recur = 0; recur < max_recursion_level; ++recur) {
-		std::unordered_map<uint64_t, int> transpositions;
-
-		score = find_solution(board, end_square,
-			transpositions, recur);
-
-		if (score == WIN || score == LOSS) {
-			return score;
-		}
-	}
-
-	return score;
-}*/
-
-// Puzzle generation idea around the property that a slider puzzle
-// never goes from unsolvable to solvable by adding more non-empty
-// components to it.
-
-const int MAX_DEPTH = 30;
-
-/*int turns_to_solve(zzt_board board, coord end_square, int max_steps) {
-	std::unordered_map<uint64_t, int> transpositions;
-
-	std::vector<std::vector<direction> > pv(max_steps+1,
-		std::vector<direction>(max_steps+1, IDLE));
-
-	uint64_t nodes_visited;
-
-	eval_score result = solve(board, end_square,
-		pv, transpositions, max_steps,
-		nodes_visited);
-
-	// There may be an off-by-one here, fix later
-	if (result.score > 0) {
-		return max_steps-result.recursion_level;
-	} else {
-		return -1;
-	}
-}*/
-
-/*int poor_mans_idfs_turns_to_solve(zzt_board board, coord end_square) {
-	int max_steps = MAX_DEPTH;
-
-	int shallow_search = turns_to_solve(board, end_square, 17);
-	if (shallow_search > 0) {
-		return shallow_search;
-	}
-
-	return turns_to_solve(board, end_square, max_steps);
-}*/
+const int MAX_DEPTH = 40;
 
 // TODO: Get the following stats:
 //		- number of solutions
@@ -414,14 +357,9 @@ int main() {
 		//coord end_square(max.x-1, 3);
 		coord end_square(max.x-1, max.y-1);
 
-		double sparsity = round(drand48()*100)/100.0;
-
 		zzt_board test_board =
-			create_indexed_puzzle(sparsity, player_pos, max, i);
-		if (i % 2 == 0) {
-			test_board = grow_indexed_board(player_pos, end_square,
+			grow_indexed_board(player_pos, end_square,
 				max, MAX_DEPTH, minmax, i);
-		}
 
 		/*return(-1);*/
 
