@@ -16,7 +16,7 @@
 #include "board.h"
 #include "generator.h"
 
-#include "solver/solver.h"
+#include "solver/all.h"
 
 // Things that need to be done:
 //	- REFACTORING. Board definitely deserves its own file.

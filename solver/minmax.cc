@@ -1,4 +1,4 @@
-#include "solver.h"
+#include "minmax.h"
 #include "../board.h"
 #include <cmath>
 

@@ -20,4 +20,4 @@ add_executable(${PROG_NAME}
 	coord.cc
 	generator.cc
 	puzzle.cc
-	solver/solver.cc)
+	solver/minmax.cc)
