@@ -5,13 +5,14 @@
 #include <iostream>
 #include <vector>
 
-enum tile				{T_EMPTY, T_PLAYER, T_SOLID,
-						 T_SLIDEREW, T_SLIDERNS, T_BOULDER};
+enum tile	{T_EMPTY = 0, T_PLAYER = 1, T_SOLID = 2,
+	T_SLIDEREW = 3, T_SLIDERNS = 4, T_BOULDER = 5,
+	T_MAX = T_BOULDER};
 
-const tile tiles[] =	{T_EMPTY, T_PLAYER, T_SOLID,
-						 T_SLIDEREW, T_SLIDERNS, T_BOULDER};
-const tile obstacles[] =				  { T_SOLID,
-						 T_SLIDEREW, T_SLIDERNS, T_BOULDER};
+const tile tiles[] = {T_EMPTY, T_PLAYER, T_SOLID,
+	T_SLIDEREW, T_SLIDERNS, T_BOULDER};
+const tile obstacles[] = { T_SOLID,
+	T_SLIDEREW, T_SLIDERNS, T_BOULDER};
 
 const int NUM_TILE_TYPES = 6;
 const int NUM_OBSTACLES = 4;
@@ -81,6 +82,9 @@ class zzt_board {
 			if (where.x < 0 || where.y < 0 ||
 				where.x >= size.x || where.y >= size.y) {
 				throw std::runtime_error("Set: Tried to set outside board!");
+			}
+			if (what < 0 || what > T_MAX) {
+				throw std::runtime_error("Set: Tried to set unknown tile!");
 			}
 			// Unhash the current tile at this position, set the new
 			// tile, and hash it.

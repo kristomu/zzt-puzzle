@@ -101,7 +101,7 @@ zzt_board grow_board(coord player_pos, coord end_square,
 	int current_depth = 1;
 	int filled_squares = 0;
 
-	uint64_t nodes_visited;
+	uint64_t nodes_visited = 0;
 
 	for (auto new_coord_tile: empty_coord_assignments) {
 
@@ -114,22 +114,25 @@ zzt_board grow_board(coord player_pos, coord end_square,
 		++filled_squares;
 
 		std::cout << "grow_board: " << filled_squares
-			<< "filled squares.   (" << nodes_visited << ")   \r";
+			<< " filled squares.   (" << nodes_visited << ")   \r"
+			<< std::flush;
 
 		nodes_visited = 0;
 		eval_score result(LOSS, 0);
 
-		// Poor man's IDDFS: Start with a recursion level of 1.
-		// If it's not solved, bump up the recursion level until
-		// either it's not solved at full recursion, or we get a
-		// solution.
+		// Do an interleaved iterative deepening DFS: each time we
+		// fail, we increase the depth until we either reach the
+		// maximum or succeed. If we reach the maximum, then the
+		// board became unsolvable due to the last tile we filled,
+		// so remove it and return; if we succeed, it's still solvable,
+		// so add another tile.
 		do {
 			result = guiding_solver.solve(board, end_square,
 				current_depth, nodes_visited);
 			if (result.score <= 0) {
 				++current_depth;
 			}
-		} while (result.score <= 0 && current_depth < recursion_level);
+		} while (result.score <= 0 && result.score != LOSS && current_depth < recursion_level);
 
 		if (result.score < 0) {
 			board.set(new_coord_tile.first, T_EMPTY);

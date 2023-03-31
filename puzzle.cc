@@ -400,7 +400,8 @@ int main() {
 	// of them.
 	std::map<int, std::vector<double> > stats_by_id;
 
-	solver minmax;
+	minmax_solver minmax;
+	iddfs_solver<minmax_solver> iddfs;
 
 	for (int i = 0; i < 1e7; ++i) {
 
@@ -425,11 +426,11 @@ int main() {
 		/*return(-1);*/
 
 		uint64_t nodes_visited = 0;
-		eval_score result = minmax.solve(test_board, end_square,
+		eval_score result = iddfs.solve(test_board, end_square,
 			MAX_DEPTH, nodes_visited);
 
 		if (result.score > 0 ) {
-			std::vector<direction> solution = minmax.get_solution();
+			std::vector<direction> solution = iddfs.get_solution();
 			// Get some statistics.
 			std::vector<int> changes_with_sol = count_changes(test_board,
 				solution);
@@ -491,8 +492,6 @@ int main() {
 			std::copy(stats.begin(), stats.end(),
 				std::ostream_iterator<double>(std::cout, " "));
 			std::cout << std::endl;
-
-			print_useful_stats(20, stats_by_id);
 		}
 	}
 }
