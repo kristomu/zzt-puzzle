@@ -335,7 +335,7 @@ void print_useful_stats(size_t desired_num_points,
 	}
 }
 
-int main() {
+int main(int argc, char ** argv) {
 	// We gather statistics about the boards as potential inputs to
 	// a linear model, to get a good idea of what makes a board hard.
 	// Because preparing a ton of puzzles is tedious, we should pick ones
@@ -343,30 +343,42 @@ int main() {
 	// of them.
 	std::map<int, std::vector<double> > stats_by_id;
 
+	bool parallel = false;
+
+	if (argc > 1 && std::string(argv[1]) == "--parallel" ) {
+		std::cout << "Enabling parallel mode." << std::endl;
+		parallel = true;
+	} else {
+		std::cout << "Starting serial mode. "
+			"Use --parallel to parallelize." << std::endl;
+	}
+
 	minmax_solver minmax;
 	iddfs_solver<minmax_solver> iddfs;
 
-	for (int i = 0; i < 1e7; ++i) {
+	// Apparently using omp parallel like this can cause minmax and iddfs
+	// to have an undefined state once they've been replicated to the
+	// threads. I do this because I don't want to be creating new solvers
+	// in memory all the time (including their expensive transposition tables),
+	// but something more elegant would probably be preferrable.
+	#pragma omp parallel for if(parallel) private(minmax, iddfs)
+	for (int i = 0; i < (int)1e7; ++i) {
+		// Vary the size of the board but in a predictable way
+		// so that we don't have to deal with
+		coord max(4 + i % 4, 4 + (i/4) % 4);
 
-		srand48(i);
-		srand(i);
-		srandom(i);
-
-		coord max(4 + random() % 4, 4 + random() % 4);
 		coord player_pos(0, 3);
-		//coord end_square(max.x-1, 3);
 		coord end_square(max.x-1, max.y-1);
 
 		zzt_board test_board =
 			grow_indexed_board(player_pos, end_square,
 				max, MAX_DEPTH, minmax, i);
 
-		/*return(-1);*/
-
 		uint64_t nodes_visited = 0;
 		eval_score result = iddfs.solve(test_board, end_square,
 			MAX_DEPTH, nodes_visited);
 
+		#pragma omp critical
 		if (result.score > 0 ) {
 			std::vector<direction> solution = iddfs.get_solution();
 			// Get some statistics.

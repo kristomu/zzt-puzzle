@@ -13,7 +13,7 @@ set(PROG_NAME "zzt-puzzle")
 # integration flags header pragmas as non-header pragmas due to a known bug.
 set(CMAKE_CXX_FLAGS
 	"-O3 -mtune=native -march=native -Wall -Werror -Wextra \
-	 -Wno-pragma-once-outside-header")
+	 -Wno-pragma-once-outside-header -fopenmp")
 
 add_executable(${PROG_NAME}
 	board.cc

@@ -1,6 +1,7 @@
 #include "generator.h"
 
 #include <algorithm>
+#include <omp.h>
 
 typedef std::pair<coord, tile> coord_and_tile;
 
@@ -134,9 +135,12 @@ zzt_board grow_board(coord player_pos, coord end_square,
 
 		++filled_squares;
 
-		std::cout << "grow_board: " << filled_squares
-			<< " filled squares.   (" << nodes_visited << ")   \r"
-			<< std::flush;
+		// Don't print stats if we're running in parallel mode.
+		if (!omp_in_parallel()) {
+			std::cout << "grow_board: " << filled_squares
+				<< " filled squares.   (" << nodes_visited << ")   \r"
+				<< std::flush;
+		}
 
 		nodes_visited = 0;
 		eval_score result(LOSS, 0);
@@ -148,7 +152,9 @@ zzt_board grow_board(coord player_pos, coord end_square,
 		// so remove it and return; if we succeed, it's still solvable,
 		// so add another tile.
 		do {
-			std::cout << "grow_board/IDFS: " << current_depth << "  \r" << std::flush;
+			if (!omp_in_parallel()) {
+				std::cout << "grow_board/IDFS: " << current_depth << "  \r" << std::flush;
+			}
 			// First test the reduced board.
 			result = guiding_solver.solve(reduced_board, end_square,
 				current_depth, nodes_visited);
@@ -163,8 +169,10 @@ zzt_board grow_board(coord player_pos, coord end_square,
 
 		if (result.score < 0) {
 			board.set(new_coord_tile.first, T_EMPTY);
-			std::cout << "\ngrow_board: unsolvable at " << filled_squares
-				<< ", returning.\n";
+			if (!omp_in_parallel()) {
+				std::cout << "\ngrow_board: unsolvable at " << filled_squares
+					<< ", returning.\n";
+			}
 			return board;
 		}
 	}
