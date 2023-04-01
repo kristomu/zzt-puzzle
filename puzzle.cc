@@ -350,39 +350,78 @@ bool verify_solution(zzt_board board, const coord end_square,
 // Test that the DFS works by using a test case that currently
 // produces way too long a solution, where a shorter one would
 // suffice.
-void test_dfs() {
-	zzt_board test_board = board_from_str(coord(7, 5),
-		".....x^"
-		".>..x.x"
-		".>>.>.>"
-		"@.^...."
-		".>.^.>.");
-	coord end_square(6, 4);
+void test_dfs_solver_once(coord board_size, std::string specification,
+	coord end_square, std::vector<direction> manual_solution) {
+	zzt_board test_board = board_from_str(board_size,
+		specification);
 
-	std::vector<direction> short_solution = {NORTH, EAST, EAST,
-		SOUTH, EAST, EAST, EAST, EAST, SOUTH};
+	std::cout << "Testing board:\n";
+	test_board.print();
+	std::cout << "Manual solution: ";
+	print_solution(manual_solution);
 
 	dfs_solver dfs;
 
 	uint64_t nodes_visited = 0;
 	eval_score result = dfs.solve(test_board, end_square,
-		15, nodes_visited);
+		manual_solution.size()+5, nodes_visited);
 
-	if (verify_solution(test_board, end_square, short_solution)) {
-		std::cout << "Short solution is OK" << std::endl;
+	if (verify_solution(test_board, end_square, manual_solution)) {
+		std::cout << "Manual solution is OK" << std::endl;
+	} else {
+		throw std::logic_error("Manual solution is not OK");
 	}
 
 	if (result.score < 0) {
 		throw std::logic_error("DFS: Couldn't find solution!");
 	}
 
-	std::vector<direction> solution = dfs.get_solution();
+	std::vector<direction> dfs_solution = dfs.get_solution();
 
-	if (solution.size() > short_solution.size()) {
+	std::cout << "DFS solution:    ";
+	print_solution(dfs_solution);
+
+	if (!verify_solution(test_board, end_square, dfs_solution)) {
+		throw std::logic_error("DFS solution is invalid!");
+	}
+
+	if (dfs_solution.size() > manual_solution.size()) {
 		throw std::logic_error("DFS 'shortest' solution is "
 			"longer than manual solution!");
 	}
+}
 
+void test_dfs() {
+	// 599
+	test_dfs_solver_once(coord(7, 5),
+		".....x^"
+		".>..x.x"
+		".>>.>.>"
+		"@.^...."
+		".>.^.>.",
+		coord(6, 4),
+		{NORTH, EAST, EAST, SOUTH, EAST, EAST, EAST, EAST, SOUTH});
+	// 587
+	test_dfs_solver_once(coord(7, 6),
+		".#x^.x."
+		"....^.."
+		">..>.x."
+		"@.#.>.."
+		"......."
+		".>.^.^.",
+		coord(6, 5),
+		{SOUTH, EAST, EAST, EAST, EAST, EAST, EAST, SOUTH});
+
+	// 1250025 - aggressive heuristics return incomplete PV
+	test_dfs_solver_once(coord(5, 6),
+		"....."
+		"^...."
+		".^.>."
+		"@...."
+		".#..."
+		"...x.",
+		coord(4, 5),
+		{EAST, EAST, EAST, EAST, SOUTH, SOUTH});
 }
 
 int main(int argc, char ** argv) {
@@ -415,7 +454,7 @@ int main(int argc, char ** argv) {
 	// in memory all the time (including their expensive transposition tables),
 	// but something more elegant would probably be preferrable.
 	#pragma omp parallel for if(parallel) private(dfs, iddfs)
-	for (int i = 599; i < 600; ++i) {
+	for (int i = 0; i < (int)1e7; ++i) {
 		// Vary the size of the board but in a predictable way
 		// so that we don't have to deal with
 		coord max(4 + i % 4, 4 + (i/4) % 4);

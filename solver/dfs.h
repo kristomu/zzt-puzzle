@@ -4,7 +4,13 @@
 
 class dfs_solver : public solver {
 	private:
-		std::unordered_map<uint64_t, int> transpositions;
+		// The first part of the transposition table is the value
+		// from that position, and the second is the recursion level.
+		// We need to keep track of the recursion level because we
+		// can't accept table matches that are closer to the root
+		// than we are.
+		std::unordered_map<uint64_t,
+			std::pair<int, int> > transpositions;
 		std::vector<std::vector<direction> > principal_variation;
 
 		std::array<std::pair<int, direction>, 4> move_ordering = {
@@ -21,10 +27,17 @@ class dfs_solver : public solver {
 			const coord & end_square, int recursion_level,
 			uint64_t & nodes_visited);
 
+		bool transposition_enabled = true;
+
 	public:
 		std::vector<direction> get_solution() const;
 
 		eval_score solve(zzt_board & board,
 			const coord & end_square, int recursion_level,
 			uint64_t & nodes_visited);
+
+		// For debugging purposes.
+		void set_transposition_table_use(bool use) {
+			transposition_enabled = use;
+		}
 };

@@ -28,6 +28,11 @@ eval_score dfs_solver::inner_solve(zzt_board & board, const coord & end_square,
 			recursion_level);
 	}
 
+	// The transposition table handling below is buggy!!! TODO: Fix.
+	// I think part of the reason is that it confuses terminal node-
+	// relative depth and root-relative, but I'll have to do some more
+	// debugging.
+
 	// Check if this board state has already been visited at this
 	// recursion level or higher. If so, there's no need to go down
 	// this branch. If it has been visited, but on a lower recursion
@@ -41,30 +46,55 @@ eval_score dfs_solver::inner_solve(zzt_board & board, const coord & end_square,
 	// us to. This may cause somewhat different ultimate scores with or
 	// without transposition tables, but shouldn't matter much in practice.
 	if (transpositions.find(board.get_hash()) != transpositions.end()) {
-		// TODO: If the transposition table says it's a win at a lesser
-		// recursion depth, that should also lead to a direct cutoff,
-		// because then it's definitely a win given more moves (there's no
-		// zugzwang). The difficult part is making sure the PV is as short
-		// as possible, which may require inserting "best move" data into the
-		// table itself... which we need for IDFS anyway.
-		if (transpositions.find(board.get_hash())->second >= recursion_level) {
+		std::pair<int, int> transposition = transpositions.find(
+			board.get_hash())->second;
+
+		// This should work, but doesn't: if we're at the same recursion
+		// level as the transposition table record, and at the same state,
+		// then we should be good to just return a value from the cache. Why
+		// doesn't it work? I have to find out; for now, I've just disabled
+		// it -- which makes things slower.
+		/*if (transposition.second == recursion_level) {
+			return eval_score(transposition.first, transposition.second);
+		}*/
+
+		// If we hit the TT at an exact answer further down, then this node
+		// has been explored already, so just copy its value and PV.
+		if (transposition.second < recursion_level &&
+			(transposition.first == WIN || transposition.first == LOSS)) {
+			std::copy(
+				principal_variation[transposition.second].begin(),
+				principal_variation[transposition.second].begin() +
+					transposition.second,
+				principal_variation[recursion_level].begin());
+			// Since we may be copying a shorter solution over a longer
+			// solution, terminate the longer solution with an IDLE...
+			// like this.
+			principal_variation[recursion_level][
+				transposition.second + 1] = IDLE;
+
+			return eval_score(transposition.first, recursion_level);
+		}
+
+		// If we hit the transposition table at something closer to the
+		// root than our current level, then that means we've made some
+		// unnecessary moves. Thus going down this line can't be optimal
+		// because a shorter path exists, so return a loss.
+		if (transposition.second > recursion_level) {
 			return eval_score(LOSS, recursion_level);
 		}
 	}
 
-	// Quick and dirty hack to keep size limited so we don't crash with
-	// an out of memory error. This should really be done by using better
-	// logic, e.g. take the hash mod something and if it's already there
-	// and has a different untruncated value, only replace if our current
-	// depth is less than its depth.
+	// First set the transposition value to a loss to keep the search
+	// from going in circles.
+	if (transposition_enabled) {
+		transpositions[board.get_hash()] = std::pair<int, int>(LOSS, 1);
+	}
 
 	// TODO: Separate off into a simple fixed size hash table with
 	// both always-replace and highest-first strategy.
 	// This essentially halts all progress once the table is full;
 	// the transposition table is that important...
-	if (transpositions.size() < 6e7) {
-		transpositions[board.get_hash()] = recursion_level;
-	}
 
 	eval_score record_score(LOSS, recursion_level);
 
@@ -113,12 +143,18 @@ eval_score dfs_solver::inner_solve(zzt_board & board, const coord & end_square,
 		// This is kind of quick and dirty; will fix later (the solution
 		// may be shorter even though it has a high recursion level.)
 		// TODO. But already like this it improves things somewhat.
+		// Isolated for now, restore when TT lookups are working.
 
-		if (solution_score.score == WIN) {
+		/*if (solution_score.score == WIN) {
 			recursion_level = record_score.recursion_level + 1;
-		}
+		}*/
 
 		board.undo_move();
+	}
+
+	if (transposition_enabled) {
+		transpositions[board.get_hash()] = std::pair<int, int>(
+			record_score.score, recursion_level);
 	}
 
 	return record_score;
