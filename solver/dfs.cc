@@ -1,4 +1,4 @@
-#include "minmax.h"
+#include "dfs.h"
 #include "../board.h"
 #include <algorithm>
 #include <cmath>
@@ -7,14 +7,14 @@
 // for the lack of anything better.
 
 // Higher is better.
-int minmax_solver::evaluate(const zzt_board & board, const coord & end_square) const {
+int dfs_solver::evaluate(const zzt_board & board, const coord & end_square) const {
 	return -end_square.manhattan_dist(board.player_pos);
 }
 
 // It would be a good idea to find a way to decisively say "nope, the board
 // is unsolvable" ahead of time. Problem is, I have no idea how. XXX
 
-eval_score minmax_solver::inner_solve(zzt_board & board, const coord & end_square,
+eval_score dfs_solver::inner_solve(zzt_board & board, const coord & end_square,
 	int recursion_level, uint64_t & nodes_visited) {
 
 	++nodes_visited;
@@ -124,7 +124,7 @@ eval_score minmax_solver::inner_solve(zzt_board & board, const coord & end_squar
 	return record_score;
 }
 
-std::vector<direction> minmax_solver::get_solution() const {
+std::vector<direction> dfs_solver::get_solution() const {
 
 	// Just read off the lower PV row to get the principal variation,
 	// until we get to IDLE, which marks the end of the solution.
@@ -140,7 +140,7 @@ std::vector<direction> minmax_solver::get_solution() const {
 	return solution;
 }
 
-eval_score minmax_solver::solve(zzt_board & board, const coord & end_square,
+eval_score dfs_solver::solve(zzt_board & board, const coord & end_square,
 	int recursion_level, uint64_t & nodes_visited) {
 
 	transpositions.clear();

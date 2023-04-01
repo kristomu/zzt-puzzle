@@ -153,7 +153,7 @@ zzt_board grow_board(coord player_pos, coord end_square,
 		// so add another tile.
 		do {
 			if (!omp_in_parallel()) {
-				std::cout << "grow_board/IDFS: " << current_depth << "  \r" << std::flush;
+				std::cout << "grow_board/IDDFS: " << current_depth << "  \r" << std::flush;
 			}
 			// First test the reduced board.
 			result = guiding_solver.solve(reduced_board, end_square,

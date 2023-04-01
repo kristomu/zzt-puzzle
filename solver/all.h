@@ -1,3 +1,3 @@
 #include "solver.h"
-#include "minmax.h"
+#include "dfs.h"
 #include "iddfs.h"

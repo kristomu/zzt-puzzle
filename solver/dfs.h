@@ -2,7 +2,7 @@
 
 #include "solver.h"
 
-class minmax_solver : public solver {
+class dfs_solver : public solver {
 	private:
 		std::unordered_map<uint64_t, int> transpositions;
 		std::vector<std::vector<direction> > principal_variation;

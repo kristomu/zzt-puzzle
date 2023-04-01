@@ -104,7 +104,7 @@ const int MAX_DEPTH = 40;
 
 // Also add this functionality:
 //		- Store best move in the transposition table.
-//		- IDFS based on this
+//		- IDDFS based on this
 //		- Move reordering based on greedy heuristic
 
 // I can't reproduce generated boards, and there seems to be a bug where some
@@ -353,15 +353,15 @@ int main(int argc, char ** argv) {
 			"Use --parallel to parallelize." << std::endl;
 	}
 
-	minmax_solver minmax;
-	iddfs_solver<minmax_solver> iddfs;
+	dfs_solver dfs;
+	iddfs_solver<dfs_solver> iddfs;
 
-	// Apparently using omp parallel like this can cause minmax and iddfs
+	// Apparently using omp parallel like this can cause dfs and iddfs
 	// to have an undefined state once they've been replicated to the
 	// threads. I do this because I don't want to be creating new solvers
 	// in memory all the time (including their expensive transposition tables),
 	// but something more elegant would probably be preferrable.
-	#pragma omp parallel for if(parallel) private(minmax, iddfs)
+	#pragma omp parallel for if(parallel) private(dfs, iddfs)
 	for (int i = 0; i < (int)1e7; ++i) {
 		// Vary the size of the board but in a predictable way
 		// so that we don't have to deal with
@@ -372,7 +372,7 @@ int main(int argc, char ** argv) {
 
 		zzt_board test_board =
 			grow_indexed_board(player_pos, end_square,
-				max, MAX_DEPTH, minmax, i);
+				max, MAX_DEPTH, dfs, i);
 
 		uint64_t nodes_visited = 0;
 		eval_score result = iddfs.solve(test_board, end_square,
