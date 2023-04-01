@@ -143,3 +143,42 @@ void zzt_board::print() const {
 		std::cout << std::endl;
 	}
 }
+
+// Does the opposite of print().
+
+zzt_board board_from_str(coord size, std::string specification) {
+	coord pos, player_pos;
+	int i = 0;
+
+	// First determine the position of the player.
+	for (pos.y = 0; pos.y < size.y; ++pos.y) {
+		for (pos.x = 0; pos.x < size.x; ++pos.x) {
+			if (specification[i++] == '@') {
+				player_pos = pos;
+			}
+		}
+	}
+
+	zzt_board output(player_pos, size);
+	i = 0;
+
+	// Then set all the others.
+	for (pos.y = 0; pos.y < size.y; ++pos.y) {
+		for (pos.x = 0; pos.x < size.x; ++pos.x) {
+			tile next_tile;
+			switch(specification[i++]) {
+				case '.': next_tile = T_EMPTY; break;
+				case '#': next_tile = T_SOLID; break;
+				case '@': next_tile = T_PLAYER; break;
+				case '>': next_tile = T_SLIDEREW; break;
+				case '^': next_tile = T_SLIDERNS; break;
+				case 'x': next_tile = T_BOULDER; break;
+				default: throw std::runtime_error(
+					"board_from_str: unknown input tile");
+			}
+			output.set(pos, next_tile);
+		}
+	}
+
+	return output;
+}

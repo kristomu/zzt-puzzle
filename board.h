@@ -151,3 +151,5 @@ class zzt_board {
 			return !(*this == other);
 		}
 };
+
+zzt_board board_from_str(coord size, std::string specification);

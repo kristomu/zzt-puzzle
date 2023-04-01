@@ -335,7 +335,60 @@ void print_useful_stats(size_t desired_num_points,
 	}
 }
 
+bool verify_solution(zzt_board board, const coord end_square,
+	const std::vector<direction> & solution) {
+
+	for (direction d: solution) {
+		if (!board.do_move(d)) {
+			return false;
+		}
+	}
+
+	return board.player_pos == end_square;
+}
+
+// Test that the DFS works by using a test case that currently
+// produces way too long a solution, where a shorter one would
+// suffice.
+void test_dfs() {
+	zzt_board test_board = board_from_str(coord(7, 5),
+		".....x^"
+		".>..x.x"
+		".>>.>.>"
+		"@.^...."
+		".>.^.>.");
+	coord end_square(6, 4);
+
+	std::vector<direction> short_solution = {NORTH, EAST, EAST,
+		SOUTH, EAST, EAST, EAST, EAST, SOUTH};
+
+	dfs_solver dfs;
+
+	uint64_t nodes_visited = 0;
+	eval_score result = dfs.solve(test_board, end_square,
+		15, nodes_visited);
+
+	if (verify_solution(test_board, end_square, short_solution)) {
+		std::cout << "Short solution is OK" << std::endl;
+	}
+
+	if (result.score < 0) {
+		throw std::logic_error("DFS: Couldn't find solution!");
+	}
+
+	std::vector<direction> solution = dfs.get_solution();
+
+	if (solution.size() > short_solution.size()) {
+		throw std::logic_error("DFS 'shortest' solution is "
+			"longer than manual solution!");
+	}
+
+}
+
 int main(int argc, char ** argv) {
+
+	test_dfs();
+
 	// We gather statistics about the boards as potential inputs to
 	// a linear model, to get a good idea of what makes a board hard.
 	// Because preparing a ton of puzzles is tedious, we should pick ones
@@ -362,7 +415,7 @@ int main(int argc, char ** argv) {
 	// in memory all the time (including their expensive transposition tables),
 	// but something more elegant would probably be preferrable.
 	#pragma omp parallel for if(parallel) private(dfs, iddfs)
-	for (int i = 0; i < (int)1e7; ++i) {
+	for (int i = 599; i < 600; ++i) {
 		// Vary the size of the board but in a predictable way
 		// so that we don't have to deal with
 		coord max(4 + i % 4, 4 + (i/4) % 4);
@@ -381,6 +434,10 @@ int main(int argc, char ** argv) {
 		#pragma omp critical
 		if (result.score > 0 ) {
 			std::vector<direction> solution = iddfs.get_solution();
+			std::vector<direction> alternate_solution = {NORTH, NORTH, NORTH, EAST, EAST, EAST, SOUTH, SOUTH, SOUTH, EAST, EAST, EAST, SOUTH};
+			if (verify_solution(test_board, end_square, alternate_solution)) {
+				std::cout << "Oops!!!" << std::endl;
+			}
 			// Get some statistics.
 			std::vector<int> changes_with_sol = count_changes(test_board,
 				solution);
