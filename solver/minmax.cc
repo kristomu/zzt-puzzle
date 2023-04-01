@@ -1,5 +1,6 @@
 #include "minmax.h"
 #include "../board.h"
+#include <algorithm>
 #include <cmath>
 
 // Get the L1 distance. We'll use this as an evaluation function
@@ -59,21 +60,30 @@ eval_score minmax_solver::inner_solve(zzt_board & board, const coord & end_squar
 
 	// TODO: Separate off into a simple fixed size hash table with
 	// both always-replace and highest-first strategy.
-	if (transpositions.size() < 2e7) {
+	// This essentially halts all progress once the table is full;
+	// the transposition table is that important...
+	if (transpositions.size() < 6e7) {
 		transpositions[board.get_hash()] = recursion_level;
 	}
 
 	eval_score record_score(LOSS, recursion_level);
 
-	for (direction dir: {SOUTH, EAST, NORTH, WEST}) {
+	// Determine the move ordering: be greedy and try to go
+	// directly to the target first, i.e. minimizing Manhattan
+	// distance.
+	for (auto & pair: move_ordering) {
+		pair.first = end_square.manhattan_dist(board.player_pos +
+			get_delta(pair.second));
+	}
+
+	std::sort(move_ordering.begin(), move_ordering.end());
+
+	for (auto & pair: move_ordering) {
+		direction dir = pair.second;
 		if (!board.do_move(dir)) { continue; }
 
 		eval_score solution_score = inner_solve(board, end_square,
 			recursion_level-1, nodes_visited);
-
-		// TODO??? If we get a winning solution, then for all subsequent
-		// solutions, limit the depth to that of the winning solution
-		// because we're not interested in any longer solutions.
 
 		if (solution_score > record_score) {
 			record_score = solution_score;
@@ -95,6 +105,17 @@ eval_score minmax_solver::inner_solve(zzt_board & board, const coord & end_squar
 			// like this.
 			principal_variation[recursion_level][
 				recursion_level - record_score.recursion_level] = IDLE;
+		}
+
+		// If we get a winning solution, then for all subsequent
+		// solutions, limit the depth to that of the winning solution
+		// because we're not interested in any longer solutions.
+		// This is kind of quick and dirty; will fix later (the solution
+		// may be shorter even though it has a high recursion level.)
+		// TODO. But already like this it improves things somewhat.
+
+		if (solution_score.score == WIN) {
+			recursion_level = record_score.recursion_level + 1;
 		}
 
 		board.undo_move();
