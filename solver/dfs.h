@@ -11,7 +11,13 @@ class dfs_solver : public solver {
 		// can't accept table matches that are closer to the root
 		// than we are.
 		std::unordered_map<uint64_t, eval_score> transpositions;
+
+		// This set contains the IDs of boards that are already being
+		// processed; this prevents the solver from going in loops.
+		// Doing it like this is slightly faster than using the TT for
+		// everything.
 		std::unordered_set<uint64_t> being_processed;
+
 		std::vector<std::vector<direction> > principal_variation;
 
 		// Evaluation function (higher is better)

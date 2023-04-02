@@ -66,6 +66,8 @@ eval_score dfs_solver::inner_solve(zzt_board & board,
 	// Looping around without changing the board state is never beneficial,
 	// as we can always remove the loop. So if we visit a square that has
 	// already been seen, count it as an automatic loss.
+	// For some reason, placing this before the TT check makes things *much* slower;
+	// I have no idea why.
 	if (being_processed.find(board.get_hash()) != being_processed.end()) {
 		return eval_score(LOSS, max_solution_length);
 	}

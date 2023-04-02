@@ -433,6 +433,10 @@ void find_error_board(coord max, int min_depth, int max_depth) {
 	}
 }
 
+
+// TODO? Very short unsolvable puzzle to make sure it returns LOSS
+// when it knows there's no solution at all.
+
 void test_dfs() {
 	// Specially constructed board to test the "no return" heuristic
 	// that if a path visits square x once, then there's no point
@@ -473,6 +477,29 @@ void test_dfs() {
 		coord(4, 5),
 		{EAST, EAST, EAST, EAST, SOUTH, SOUTH});
 }
+
+// Other ideas:
+
+// - .brd or .zzt writer. Use linux-reconstruction as source. The
+//		most difficult part would be to line up the puzzles, add blinding
+//		to the puzzles so they're not revealed until the player enters (blue
+//		on blue sliders/etc then #change blue slider white slider)
+// - the "best yet" variable in DFS is like one of the bounds in alpha-beta.
+//		See if this can be done more rigorously.
+// - IDDFS: Keep the transposition table between depths now that it doesn't
+//		care about what the horizon is.
+// - IDDFS: Use the PV from shallower searches to guide move ordering (place
+//		the PV move first then sort by Manhattan distance). Something like
+//		solve(..., const std::vector<distance> & move_ordering_hint)
+// - grow_board: use more observations, e.g. get upper bound on depth required
+//		to check if the slider puzzle is solvable, by doing the standard IDDFS
+//		with every slider turned into a boulder - if that puzzle isn't
+//		solvable, then the one with sliders isn't either.
+// - Memory-bounded transposition table.
+// - SMT solver (???)
+
+// But how much should I work on this before I go back to flux_analyze, given
+// that my self-imposed April Fools deadline has passed?
 
 int main(int argc, char ** argv) {
 
@@ -523,10 +550,7 @@ int main(int argc, char ** argv) {
 		#pragma omp critical
 		if (result.score > 0 ) {
 			std::vector<direction> solution = iddfs.get_solution();
-			std::vector<direction> alternate_solution = {NORTH, NORTH, NORTH, EAST, EAST, EAST, SOUTH, SOUTH, SOUTH, EAST, EAST, EAST, SOUTH};
-			if (verify_solution(test_board, end_square, alternate_solution)) {
-				std::cout << "Oops!!!" << std::endl;
-			}
+
 			// Get some statistics.
 			std::vector<int> changes_with_sol = count_changes(test_board,
 				solution);
