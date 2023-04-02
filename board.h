@@ -153,3 +153,5 @@ class zzt_board {
 };
 
 zzt_board board_from_str(coord size, std::string specification);
+
+std::string str_direction(direction dir);

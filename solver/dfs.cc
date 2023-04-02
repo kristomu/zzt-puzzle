@@ -18,6 +18,14 @@ eval_score dfs_solver::inner_solve(zzt_board & board,
 	const coord & end_square, int max_solution_length,
 	uint64_t & nodes_visited, eval_score & best_score_so_far) {
 
+	// Must be local or move reordering at one depth will
+	// mess with that at another.
+	std::array<std::pair<int, direction>, 4> move_ordering = {
+			std::pair<int, direction>(0, SOUTH),
+			std::pair<int, direction>(0, EAST),
+			std::pair<int, direction>(0, WEST),
+			std::pair<int, direction>(0, NORTH)};
+
 	++nodes_visited;
 
 	if (board.player_pos == end_square) {

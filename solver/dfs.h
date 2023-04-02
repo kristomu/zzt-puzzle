@@ -14,12 +14,6 @@ class dfs_solver : public solver {
 		std::unordered_set<uint64_t> being_processed;
 		std::vector<std::vector<direction> > principal_variation;
 
-		std::array<std::pair<int, direction>, 4> move_ordering = {
-			std::pair<int, direction>(0, SOUTH),
-			std::pair<int, direction>(0, EAST),
-			std::pair<int, direction>(0, WEST),
-			std::pair<int, direction>(0, NORTH)};
-
 		// Evaluation function (higher is better)
 		int evaluate(const zzt_board & board,
 			const coord & end_square) const;

@@ -182,3 +182,14 @@ zzt_board board_from_str(coord size, std::string specification) {
 
 	return output;
 }
+
+std::string str_direction(direction dir) {
+	switch(dir) {
+		case NORTH: return "N ";
+		case SOUTH: return "S ";
+		case EAST: return "E ";
+		case WEST: return "W ";
+		default:
+			throw std::logic_error("print_solution: Unknown direction!");
+	}
+}
