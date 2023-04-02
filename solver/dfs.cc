@@ -41,13 +41,20 @@ eval_score dfs_solver::inner_solve(zzt_board & board,
 	// the current state, then there's no need to go down it again.
 	if (transpositions.find(board.get_hash()) != transpositions.end()) {
 		auto pos = transpositions.find(board.get_hash());
-		if (pos->second.first == WIN && pos->second.second <= max_solution_length) {
-			return eval_score(pos->second.first, pos->second.second);
+		if (pos->second.score == WIN && pos->second.solution_length <= max_solution_length) {
+			return pos->second;
 		}
 	}
 
-	transpositions[board.get_hash()] = std::pair<int, int>(
-		LOSS, 0);
+	if (being_processed.find(board.get_hash()) != being_processed.end()) {
+		return eval_score(LOSS, max_solution_length);
+	}
+
+	uint64_t before_hash = board.get_hash();
+
+	if (transposition_enabled) {
+		being_processed.insert(board.get_hash());
+	}
 
 	eval_score record_score(LOSS, 0);
 
@@ -130,8 +137,11 @@ eval_score dfs_solver::inner_solve(zzt_board & board,
 	// Then add to the TT and return!
 	record_score.solution_length += 1;
 
-	transpositions[board.get_hash()] = std::pair<int, int>(
-		record_score.score, record_score.solution_length);
+	if (board.get_hash() != before_hash) {
+		throw std::runtime_error("Hashing error");
+	}
+	transpositions[board.get_hash()] = record_score;
+	being_processed.erase(board.get_hash());
 
 	return record_score;
 }

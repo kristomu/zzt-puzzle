@@ -396,7 +396,52 @@ void test_dfs_solver_once(coord board_size, std::string specification,
 	}
 }
 
+void find_error_board(coord max, int min_depth, int max_depth) {
+
+	dfs_solver without_tt, with_tt;
+	without_tt.set_transposition_table_use(false);
+	with_tt.set_transposition_table_use(true);
+
+	for(int i = 0;;++i) {
+		coord player_pos(0, 0);
+		coord end_square(max.x-1, max.y-1);
+
+		uint64_t nodes_visited = 0;
+
+		zzt_board board =
+			grow_indexed_board(player_pos, end_square,
+				max, max_depth, without_tt, i);
+
+		// Add some extra depth to provoke bugs.
+		eval_score without_tt_soln = without_tt.solve(board, end_square,
+			2 + min_depth + i % (max_depth - min_depth),
+			nodes_visited);
+		eval_score with_tt_soln = with_tt.solve(board, end_square,
+			2 + min_depth + i % (max_depth - min_depth),
+			nodes_visited);
+
+		if ((without_tt_soln.score > 0) ^ (with_tt_soln.score > 0)) {
+			board.print();
+			std::cout << "idx = " << i << std::endl;
+			throw std::logic_error("Heuristic/transposition table bug demonstrated!");
+		}
+		if (without_tt_soln.score > 0 && with_tt_soln.score > 0) {
+			std::cout << "#" << std::endl;
+		} else {
+			std::cout << "." << std::endl;
+		}
+	}
+}
+
 void test_dfs() {
+	// Specially constructed board to test the "no return" heuristic
+	// that if a path visits square x once, then there's no point
+	// looping back to square x unless the board state has changed.
+	test_dfs_solver_once(coord(3, 2),
+		"@.."
+		".#.",
+		coord(2, 1),
+		{EAST, EAST, SOUTH});
 	// 599
 	test_dfs_solver_once(coord(7, 5),
 		".....x^"
@@ -432,6 +477,7 @@ void test_dfs() {
 int main(int argc, char ** argv) {
 
 	test_dfs();
+	return -1;
 
 	// We gather statistics about the boards as potential inputs to
 	// a linear model, to get a good idea of what makes a board hard.

@@ -19,6 +19,11 @@ class eval_score {
 			solution_length = soln_length_in;
 		}
 
+		eval_score() {
+			score = LOSS;
+			solution_length = 0;
+		}
+
 		// Here, x > y means "x is better than y"; and
 		// x is better than y if x's score is greater or
 		// it's got a shorter solution length.
@@ -49,6 +54,16 @@ class eval_score {
 			return !(*this == other);
 		}
 };
+
+namespace std {
+	template<> class hash<eval_score> {
+		public:
+			size_t operator()(const eval_score & to_hash) const {
+				return (std::hash<int>()(to_hash.score) << 1) +
+					std::hash<int>()(to_hash.solution_length);
+			}
+	};
+}
 
 // This is a class that suggests what moves to try first for
 // different player positions. Note that it produces a mapping

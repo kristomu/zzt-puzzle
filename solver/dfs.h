@@ -1,6 +1,7 @@
 #pragma once
 
 #include "solver.h"
+#include <unordered_set>
 
 class dfs_solver : public solver {
 	private:
@@ -9,8 +10,8 @@ class dfs_solver : public solver {
 		// We need to keep track of the recursion level because we
 		// can't accept table matches that are closer to the root
 		// than we are.
-		std::unordered_map<uint64_t,
-			std::pair<int, int> > transpositions;
+		std::unordered_map<uint64_t, eval_score> transpositions;
+		std::unordered_set<uint64_t> being_processed;
 		std::vector<std::vector<direction> > principal_variation;
 
 		std::array<std::pair<int, direction>, 4> move_ordering = {
