@@ -24,16 +24,17 @@ class dfs_solver : public solver {
 			const coord & end_square) const;
 
 		eval_score inner_solve(zzt_board & board,
-			const coord & end_square, int recursion_level,
-			uint64_t & nodes_visited);
+			const coord & end_square, int max_solution_length,
+			uint64_t & nodes_visited, eval_score & best_score_so_far);
 
 		bool transposition_enabled = true;
+		int last_solution_length = 0;
 
 	public:
 		std::vector<direction> get_solution() const;
 
 		eval_score solve(zzt_board & board,
-			const coord & end_square, int recursion_level,
+			const coord & end_square, int max_solution_length,
 			uint64_t & nodes_visited);
 
 		// For debugging purposes.

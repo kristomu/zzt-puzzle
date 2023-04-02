@@ -385,6 +385,11 @@ void test_dfs_solver_once(coord board_size, std::string specification,
 		throw std::logic_error("DFS solution is invalid!");
 	}
 
+	if ((int)dfs_solution.size() != result.solution_length) {
+		throw std::logic_error("DFS: reported solution length is not "
+			"actual solution length!");
+	}
+
 	if (dfs_solution.size() > manual_solution.size()) {
 		throw std::logic_error("DFS 'shortest' solution is "
 			"longer than manual solution!");
@@ -529,7 +534,7 @@ int main(int argc, char ** argv) {
 				unusual_proportion << std::endl;
 			std::cout << "Index " << i << ": Real sparsity is "
 				<< real_board_sparsity << ", solution in " << solution.size()
-				<< "/" << result.recursion_level << ": ";
+				<< "/" << result.solution_length << ": ";
 			print_solution(solution);
 
 			std::cout << "Index " << i << ": nodes visited: " << nodes_visited << std::endl;

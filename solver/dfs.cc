@@ -14,89 +14,42 @@ int dfs_solver::evaluate(const zzt_board & board, const coord & end_square) cons
 // It would be a good idea to find a way to decisively say "nope, the board
 // is unsolvable" ahead of time. Problem is, I have no idea how. XXX
 
-eval_score dfs_solver::inner_solve(zzt_board & board, const coord & end_square,
-	int recursion_level, uint64_t & nodes_visited) {
+eval_score dfs_solver::inner_solve(zzt_board & board,
+	const coord & end_square, int max_solution_length,
+	uint64_t & nodes_visited, eval_score & best_score_so_far) {
 
 	++nodes_visited;
 
 	if (board.player_pos == end_square) {
-		return eval_score(WIN, recursion_level); // An outright win.
+		return eval_score(WIN, 0); // An outright win.
 	}
 
-	if (recursion_level == 0) {
-		return eval_score(evaluate(board, end_square),
-			recursion_level);
+	// We hit the horizon, so while the "solution" won't be
+	// an actual solution, it ends here.
+	if (max_solution_length <= 0) {
+		return eval_score(evaluate(board, end_square), 0);
 	}
 
-	// The transposition table handling below is buggy!!! TODO: Fix.
-	// I think part of the reason is that it confuses terminal node-
-	// relative depth and root-relative, but I'll have to do some more
-	// debugging.
+	// If we have already seen a win, and we're not at a winning
+	// square, abort with a loss because there's no way we can
+	// improve on the current best outcome.
+	if (best_score_so_far == eval_score(WIN, 0)) {
+		return eval_score(LOSS, 0);
+	}
 
-	// Check if this board state has already been visited at this
-	// recursion level or higher. If so, there's no need to go down
-	// this branch. If it has been visited, but on a lower recursion
-	// level, then it's possible that the extra moves may lead closer
-	// to a solution, and we should check anyway.
-
-	// Note that because the "game tree" is a cyclic graph, there's some
-	// ambiguity about what value a solution should have if it consists
-	// of just going back and forth all the time. On the other hand, it
-	// should be possible to "pass", but transposition tables don't allow
-	// us to. This may cause somewhat different ultimate scores with or
-	// without transposition tables, but shouldn't matter much in practice.
+	// Transposition table check: If we have a definite result at
+	// the current state, then there's no need to go down it again.
 	if (transpositions.find(board.get_hash()) != transpositions.end()) {
-		std::pair<int, int> transposition = transpositions.find(
-			board.get_hash())->second;
-
-		// This should work, but doesn't: if we're at the same recursion
-		// level as the transposition table record, and at the same state,
-		// then we should be good to just return a value from the cache. Why
-		// doesn't it work? I have to find out; for now, I've just disabled
-		// it -- which makes things slower.
-		/*if (transposition.second == recursion_level) {
-			return eval_score(transposition.first, transposition.second);
-		}*/
-
-		// If we hit the TT at an exact answer further down, then this node
-		// has been explored already, so just copy its value and PV.
-		if (transposition.second < recursion_level &&
-			(transposition.first == WIN || transposition.first == LOSS)) {
-			std::copy(
-				principal_variation[transposition.second].begin(),
-				principal_variation[transposition.second].begin() +
-					transposition.second,
-				principal_variation[recursion_level].begin());
-			// Since we may be copying a shorter solution over a longer
-			// solution, terminate the longer solution with an IDLE...
-			// like this.
-			principal_variation[recursion_level][
-				transposition.second + 1] = IDLE;
-
-			return eval_score(transposition.first, recursion_level);
-		}
-
-		// If we hit the transposition table at something closer to the
-		// root than our current level, then that means we've made some
-		// unnecessary moves. Thus going down this line can't be optimal
-		// because a shorter path exists, so return a loss.
-		if (transposition.second > recursion_level) {
-			return eval_score(LOSS, recursion_level);
+		auto pos = transpositions.find(board.get_hash());
+		if (pos->second.first == WIN && pos->second.second <= max_solution_length) {
+			return eval_score(pos->second.first, pos->second.second);
 		}
 	}
 
-	// First set the transposition value to a loss to keep the search
-	// from going in circles.
-	if (transposition_enabled) {
-		transpositions[board.get_hash()] = std::pair<int, int>(LOSS, 1);
-	}
+	transpositions[board.get_hash()] = std::pair<int, int>(
+		LOSS, 0);
 
-	// TODO: Separate off into a simple fixed size hash table with
-	// both always-replace and highest-first strategy.
-	// This essentially halts all progress once the table is full;
-	// the transposition table is that important...
-
-	eval_score record_score(LOSS, recursion_level);
+	eval_score record_score(LOSS, 0);
 
 	// Determine the move ordering: be greedy and try to go
 	// directly to the target first, i.e. minimizing Manhattan
@@ -112,11 +65,29 @@ eval_score dfs_solver::inner_solve(zzt_board & board, const coord & end_square,
 		direction dir = pair.second;
 		if (!board.do_move(dir)) { continue; }
 
-		eval_score solution_score = inner_solve(board, end_square,
-			recursion_level-1, nodes_visited);
+		// We now need to decrease the solution length for the
+		// best score so far (our cutoff). This because if we descend
+		// down a node, then clearly the solution, if we have one, just
+		// got one node shorter.
 
-		if (solution_score > record_score) {
+		--best_score_so_far.solution_length;
+
+		eval_score solution_score = inner_solve(board, end_square,
+			max_solution_length-1, nodes_visited, best_score_so_far);
+
+		++best_score_so_far.solution_length;
+
+		if (solution_score.solution_length < 0) {
+			throw std::logic_error("solution_length < 0");
+		}
+
+		if (solution_score > record_score &&
+			solution_score >= best_score_so_far) {
+
 			record_score = solution_score;
+			best_score_so_far = solution_score;
+
+			int actual_length = record_score.solution_length + 1;
 
 			// Copy the solution itself (PV) from the deeper
 			// recursion onto our current best guess; plus the
@@ -124,38 +95,43 @@ eval_score dfs_solver::inner_solve(zzt_board & board, const coord & end_square,
 			// At any level, pv[level][0] will then contain the
 			// steps to the best solution so far, from the starting
 			// point currently being explored at that level.
-			principal_variation[recursion_level][0] = dir;
+			principal_variation[actual_length][0] = dir;
 			std::copy(
-				principal_variation[recursion_level-1].begin(),
-				principal_variation[recursion_level-1].begin() +
-					recursion_level-1,
-				principal_variation[recursion_level].begin() + 1);
+				principal_variation[record_score.solution_length].begin(),
+				principal_variation[record_score.solution_length].begin() +
+					record_score.solution_length,
+				principal_variation[actual_length].begin() + 1);
 			// Since we may be copying a shorter solution over a longer
 			// solution, terminate the longer solution with an IDLE...
 			// like this.
-			principal_variation[recursion_level][
-				recursion_level - record_score.recursion_level] = IDLE;
+			principal_variation[actual_length][actual_length+1] = IDLE;
+
+			// If the record is a win, then we don't care about longer
+			// wins, so adjust the max solution length accordingly.
+			if (record_score.score == WIN) {
+				max_solution_length = std::min(max_solution_length,
+					record_score.solution_length);
+				// The Manhattan distance places a limit on how far
+				// we can go. If we can't possibly get to the end square
+				// in the moves allotted, and the record is a win, then
+				// just break right here. (If the record is not a win,
+				// we could possibly get a better heuristic value.)
+				if (record_score.solution_length <
+					end_square.manhattan_dist(board.player_pos)) {
+					max_solution_length = 0;
+				}
+			}
 		}
-
-		// If we get a winning solution, then for all subsequent
-		// solutions, limit the depth to that of the winning solution
-		// because we're not interested in any longer solutions.
-		// This is kind of quick and dirty; will fix later (the solution
-		// may be shorter even though it has a high recursion level.)
-		// TODO. But already like this it improves things somewhat.
-		// Isolated for now, restore when TT lookups are working.
-
-		/*if (solution_score.score == WIN) {
-			recursion_level = record_score.recursion_level + 1;
-		}*/
 
 		board.undo_move();
 	}
 
-	if (transposition_enabled) {
-		transpositions[board.get_hash()] = std::pair<int, int>(
-			record_score.score, recursion_level);
-	}
+	// Increment solution length because we added a move.
+	// Then add to the TT and return!
+	record_score.solution_length += 1;
+
+	transpositions[board.get_hash()] = std::pair<int, int>(
+		record_score.score, record_score.solution_length);
 
 	return record_score;
 }
@@ -166,7 +142,7 @@ std::vector<direction> dfs_solver::get_solution() const {
 	// until we get to IDLE, which marks the end of the solution.
 
 	std::vector<direction> solution;
-	for (direction dir: *principal_variation.rbegin()) {
+	for (direction dir: principal_variation[last_solution_length]) {
 		if(dir == IDLE) {
 			return solution;
 		}
@@ -177,12 +153,18 @@ std::vector<direction> dfs_solver::get_solution() const {
 }
 
 eval_score dfs_solver::solve(zzt_board & board, const coord & end_square,
-	int recursion_level, uint64_t & nodes_visited) {
+	int max_solution_length, uint64_t & nodes_visited) {
 
 	transpositions.clear();
 	principal_variation = std::vector<std::vector<direction> >(
-		recursion_level+1, std::vector<direction>(recursion_level+1, IDLE));
+		max_solution_length+2, std::vector<direction>(max_solution_length+2, IDLE));
 
-	return inner_solve(board, end_square, recursion_level,
-		nodes_visited);
+	eval_score bound(LOSS-1, max_solution_length+1);
+
+	eval_score best = inner_solve(board, end_square, max_solution_length,
+		nodes_visited, bound);
+
+	last_solution_length = best.solution_length;
+
+	return best;
 }
