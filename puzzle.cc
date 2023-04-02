@@ -503,7 +503,7 @@ int main(int argc, char ** argv) {
 	// threads. I do this because I don't want to be creating new solvers
 	// in memory all the time (including their expensive transposition tables),
 	// but something more elegant would probably be preferrable.
-	#pragma omp parallel for if(parallel) private(dfs, iddfs)
+	#pragma omp parallel for if(parallel) private(dfs, iddfs) schedule(monotonic:dynamic)
 	for (int i = 0; i < (int)1e7; ++i) {
 		// Vary the size of the board but in a predictable way
 		// so that we don't have to deal with
