@@ -83,7 +83,7 @@ void print_solution(const std::vector<direction> & solution) {
 	std::cout << std::endl;
 }
 
-const int MAX_DEPTH = 40;
+const int MAX_DEPTH = 30;
 
 // TODO: Get the following stats:
 //		- number of solutions
@@ -477,7 +477,6 @@ void test_dfs() {
 int main(int argc, char ** argv) {
 
 	test_dfs();
-	return -1;
 
 	// We gather statistics about the boards as potential inputs to
 	// a linear model, to get a good idea of what makes a board hard.

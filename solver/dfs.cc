@@ -47,18 +47,28 @@ eval_score dfs_solver::inner_solve(zzt_board & board,
 
 	// Transposition table check: If we have a definite result at
 	// the current state, then there's no need to go down it again.
-	if (transpositions.find(board.get_hash()) != transpositions.end()) {
+	if (transposition_enabled &&
+		(transpositions.find(board.get_hash()) != transpositions.end())) {
+
 		auto pos = transpositions.find(board.get_hash());
+		// If we have a win at this length or shorter, return it
+		// immediately; we can't do better.
 		if (pos->second.score == WIN && pos->second.solution_length <= max_solution_length) {
+			return pos->second;
+		}
+		// If we have something that's not a win at this length or longer,
+		// return it immediately; we can't do better either.
+		if (pos->second.score < WIN && pos->second.solution_length >= max_solution_length) {
 			return pos->second;
 		}
 	}
 
+	// Looping around without changing the board state is never beneficial,
+	// as we can always remove the loop. So if we visit a square that has
+	// already been seen, count it as an automatic loss.
 	if (being_processed.find(board.get_hash()) != being_processed.end()) {
 		return eval_score(LOSS, max_solution_length);
 	}
-
-	uint64_t before_hash = board.get_hash();
 
 	if (transposition_enabled) {
 		being_processed.insert(board.get_hash());
@@ -131,6 +141,9 @@ eval_score dfs_solver::inner_solve(zzt_board & board,
 				// in the moves allotted, and the record is a win, then
 				// just break right here. (If the record is not a win,
 				// we could possibly get a better heuristic value.)
+				// It might be possible to prune even more broadly by
+				// making use of the evaluation function being a
+				// Manhattan distance too. Not done yet. XXX
 				if (record_score.solution_length <
 					end_square.manhattan_dist(board.player_pos)) {
 					max_solution_length = 0;
@@ -145,11 +158,10 @@ eval_score dfs_solver::inner_solve(zzt_board & board,
 	// Then add to the TT and return!
 	record_score.solution_length += 1;
 
-	if (board.get_hash() != before_hash) {
-		throw std::runtime_error("Hashing error");
+	if (transposition_enabled) {
+		transpositions[board.get_hash()] = record_score;
+		being_processed.erase(board.get_hash());
 	}
-	transpositions[board.get_hash()] = record_score;
-	being_processed.erase(board.get_hash());
 
 	return record_score;
 }
