@@ -19,19 +19,9 @@
 #include "solver/all.h"
 
 // Things that need to be done:
-//	- REFACTORING. Board definitely deserves its own file.
-//		And the board generator should be put somewhere and
-//		finalized so that rearranging the rest of the code won't
-//		invalidate the board IDs (currently based on random seeds).
-//	- Parallelization (openmp or queues).
-//	- Move ordering in solve(), try the naive approach first
-//	- Iterative deepening DFS, try the previous iteration's PV first
 //	- Some way to tell that a board is definitely unsolvable, or variant
 //		solutions that can check if it is unsolvable (a slider puzzle can
 //		never be solved if it's unsolvable when all the sliders are boulders, say)
-//	- The TODO in solve regarding early pruning (alpha beta analog) where if the
-//		solution is 4 moves out and we have 10 moves left, set the moves left to 4
-//		because there's no point in going deeper.
 
 void test_one() {
 	coord max(random()%10 + 2, random()%10 + 2);
@@ -101,11 +91,6 @@ const int MAX_DEPTH = 30;
 // https://sci-hub.st/http://dx.doi.org/10.1109/cig.2015.7317913
 // If I use ratings to get feedback, I should remember that they're
 // potentially arbitrarily affinely scaled.
-
-// Also add this functionality:
-//		- Store best move in the transposition table.
-//		- IDDFS based on this
-//		- Move reordering based on greedy heuristic
 
 // I can't reproduce generated boards, and there seems to be a bug where some
 // solutions are much too long (or alternatively, it fails to find a short
@@ -486,17 +471,18 @@ void test_dfs() {
 //		on blue sliders/etc then #change blue slider white slider)
 // - the "best yet" variable in DFS is like one of the bounds in alpha-beta.
 //		See if this can be done more rigorously.
-// - IDDFS: Keep the transposition table between depths now that it doesn't
-//		care about what the horizon is.
-// - IDDFS: Use the PV from shallower searches to guide move ordering (place
-//		the PV move first then sort by Manhattan distance). Something like
-//		solve(..., const std::vector<distance> & move_ordering_hint)
 // - grow_board: use more observations, e.g. get upper bound on depth required
 //		to check if the slider puzzle is solvable, by doing the standard IDDFS
 //		with every slider turned into a boulder - if that puzzle isn't
 //		solvable, then the one with sliders isn't either.
 // - Memory-bounded transposition table.
 // - SMT solver (???)
+// - "Endgame tablebases" of some sort: configurations around the end square that
+//		imply that the configuration is unsolvable even if the rest of the board
+//		is empty. (e.g. 3x3 region centered on end square, with space, boulder, solid;
+//		--> 3^9 = 19683 configurations. With sliders too: 1.9 million)
+// - Tree structure-based metrics for estimating difficulty, see the Sokoban
+//		paper: 10.3233/978-1-60750-675-1-140
 
 // But how much should I work on this before I go back to flux_analyze, given
 // that my self-imposed April Fools deadline has passed?
