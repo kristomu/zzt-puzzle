@@ -1,0 +1,4 @@
+[submodule "linux-reconstruction-of-zzt"]
+	path = linux-reconstruction-of-zzt
+	url = https://github.com/kristomu/linux-reconstruction-of-zzt/
+	branch = cport
