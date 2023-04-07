@@ -116,6 +116,14 @@ zzt_board grow_board(coord player_pos, coord end_square,
 
 	uint64_t nodes_visited = 0;
 
+	// For statistical purposes: this gives the longest stretch of
+	// apparently unsolvable puzzles before a deeper depth uncovers
+	// that the puzzle is indeed solvable. This could be used later
+	// for a progressive deepening idea where if nothing happens after
+	// a certain number of depth increases, we assume the puzzle is
+	// unsolvable.
+	int max_depth_until_solvable = 0, depth_until_solvable = 0;
+
 	for (auto new_coord_tile: empty_coord_assignments) {
 
 		// Don't overwrite the player position.
@@ -164,8 +172,10 @@ zzt_board grow_board(coord player_pos, coord end_square,
 			}
 			if (result.score <= 0) {
 				++current_depth;
+				++depth_until_solvable;
 			}
-		} while (result.score <= 0 && result.score != LOSS && current_depth < recursion_level);
+		} while (result.score <= 0 && result.score != LOSS &&
+			current_depth < recursion_level);
 
 		if (result.score < 0) {
 			board.set(new_coord_tile.first, T_EMPTY);
@@ -173,7 +183,14 @@ zzt_board grow_board(coord player_pos, coord end_square,
 				std::cout << "\ngrow_board: unsolvable at " << filled_squares
 					<< ", returning.\n";
 			}
+			#pragma omp critical
+				std::cout << "\ngrow_board: max depth until solvable: "
+					<< max_depth_until_solvable << "\n";
 			return board;
+		} else {
+			max_depth_until_solvable = std::max(max_depth_until_solvable,
+				depth_until_solvable);
+			depth_until_solvable = 0;
 		}
 	}
 
