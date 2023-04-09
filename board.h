@@ -33,6 +33,7 @@ struct push_info {
 	coord player_direction;
 };
 
+// TODO: relabel to puzzle_board to distinguish from an ordinary ZZT board.
 class zzt_board {
 	private:
 		coord size;
