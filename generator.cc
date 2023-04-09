@@ -108,6 +108,8 @@ zzt_board grow_board(coord player_pos, coord end_square,
 	zzt_board board(player_pos, size);
 	zzt_board reduced_board(player_pos, size);
 
+	int sumlength = size.x + size.y;
+
 	std::vector<coord_and_tile> empty_coord_assignments =
 		get_empty_coord_assignments(board, rng);
 
@@ -174,8 +176,13 @@ zzt_board grow_board(coord player_pos, coord end_square,
 				++current_depth;
 				++depth_until_solvable;
 			}
+		// Try a maxlength heuristic... seems to work in practice,
+		// that if we add something to a board, it'll never take more
+		// moves than the max length along an edge to solve... IDK why.
+		// Apparently it *is* possible. HACK to see how much performance
+		// we get from a looser criterion.
 		} while (result.score <= 0 && result.score != LOSS &&
-			current_depth < recursion_level);
+			current_depth < recursion_level && depth_until_solvable < sumlength + 1);
 
 		if (result.score < 0) {
 			board.set(new_coord_tile.first, T_EMPTY);

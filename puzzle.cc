@@ -73,7 +73,7 @@ void print_solution(const std::vector<direction> & solution) {
 	std::cout << std::endl;
 }
 
-const int MAX_DEPTH = 30;
+const int MAX_DEPTH = 45;
 
 // TODO: Get the following stats:
 //		- number of solutions
