@@ -120,6 +120,9 @@ class zzt_board {
 			set(player_pos, T_PLAYER);
 		}
 
+		// quick and dirty default constructor to make std::map
+		// work. TODO? something more sensible?
+		zzt_board() : zzt_board(coord(0, 0), coord(10, 10)) {}
 
 		std::vector<push_info> push_log;
 		std::vector<push_info>::const_iterator push_log_pos;
