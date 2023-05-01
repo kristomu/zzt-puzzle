@@ -24,13 +24,15 @@ add_executable(${PROG_NAME}
 	coord.cc
 	generator.cc
 	puzzle.cc
-	solver/dfs.cc)
+	solver/dfs.cc
+	random/random.cc)
 
 add_executable(${WRITER_PROG_NAME}
 	board.cc
 	coord.cc
 	generator.cc
 	solver/dfs.cc
+	random/random.cc
 	linux-reconstruction-of-zzt/csrc/world.cc
 	linux-reconstruction-of-zzt/csrc/board.cc
 	linux-reconstruction-of-zzt/csrc/tools.cc

@@ -2,7 +2,8 @@
 
 #include "solver/solver.h"
 #include "board.h"
-#include <random>
+
+#include "random/random.h"
 
 // Puzzle generators. For now this only includes the random fill
 // generator (create a random board at some sparsity) as the
@@ -10,11 +11,11 @@
 // would produce annoying dependencies among headers. Fix later.
 
 void fill_puzzle(zzt_board & board, size_t tiles_to_fill,
-	std::mt19937 & rng);
+	rng & rng_to_use);
 
 zzt_board create_random_puzzle(double sparsity,
 	coord player_pos, coord max_size,
-	std::mt19937 & rng);
+	rng & rng_to_use);
 
 zzt_board create_indexed_puzzle(double sparsity,
 	coord player_pos, coord max_size,
@@ -22,7 +23,7 @@ zzt_board create_indexed_puzzle(double sparsity,
 
 zzt_board grow_board(coord player_pos,
 	coord end_square, coord size, int recursion_level,
-	solver & guiding_solver, std::mt19937 & rng);
+	solver & guiding_solver, rng & rng_to_use);
 
 zzt_board grow_indexed_board(coord player_pos, coord end_square,
 	coord size, int recursion_level, solver & guiding_solver,

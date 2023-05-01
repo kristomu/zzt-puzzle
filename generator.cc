@@ -11,7 +11,7 @@ typedef std::pair<coord, tile> coord_and_tile;
 // in empty tiles for grow_board.
 
 std::vector<coord_and_tile> get_empty_coord_assignments(
-	const zzt_board & board, std::mt19937 & rng) {
+	const zzt_board & board, rng & rng_to_use) {
 
 	std::uniform_int_distribution<int> tile_dist(0, NUM_OBSTACLES-1);
 
@@ -31,14 +31,14 @@ std::vector<coord_and_tile> get_empty_coord_assignments(
 
 			coord_and_tile pos_tile;
 			pos_tile.first = pos;
-			pos_tile.second = obstacles[tile_dist(rng)];
+			pos_tile.second = obstacles[tile_dist(rng_to_use)];
 			empty_coord_assignments.push_back(pos_tile);
 		}
 	}
 
 	// Shuffle the vector to create a random order.
 	std::shuffle(empty_coord_assignments.begin(),
-		empty_coord_assignments.end(), rng);
+		empty_coord_assignments.end(), rng_to_use);
 
 	return empty_coord_assignments;
 }
@@ -46,10 +46,10 @@ std::vector<coord_and_tile> get_empty_coord_assignments(
 // Fill empty tiles until tiles_to_fill tiles have been
 // filled or everything is full.
 void fill_puzzle(zzt_board & board, size_t tiles_to_fill,
-	std::mt19937 & rng) {
+	rng & rng_to_use) {
 
 	std::vector<coord_and_tile> empty_coord_assignments =
-		get_empty_coord_assignments(board, rng);
+		get_empty_coord_assignments(board, rng_to_use);
 
 	// Then fill the board.
 	for (size_t i = 0; i < std::min(empty_coord_assignments.size(),
@@ -62,14 +62,14 @@ void fill_puzzle(zzt_board & board, size_t tiles_to_fill,
 
 zzt_board create_random_puzzle(double sparsity,
 	coord player_pos, coord max_size,
-	std::mt19937 & rng) {
+	rng & rng_to_use) {
 
 	zzt_board out_board(player_pos, max_size);
 
 	int tiles_to_fill = round(
 		(max_size.x * max_size.y) * 1-sparsity);
 
-	fill_puzzle(out_board, tiles_to_fill, rng);
+	fill_puzzle(out_board, tiles_to_fill, rng_to_use);
 	return out_board;
 }
 
@@ -82,7 +82,7 @@ zzt_board create_indexed_puzzle(double sparsity,
 	// Use the RNG as a deterministic source of
 	// numbers with no pattern.
 
-	std::mt19937 prng(index);
+	rng prng(index);
 
 	return create_random_puzzle(sparsity,
 		player_pos, max_size, prng);
@@ -92,7 +92,7 @@ zzt_board create_indexed_puzzle(double sparsity,
 // solved.
 zzt_board grow_board(coord player_pos, coord end_square,
 	coord size, int recursion_level, solver & guiding_solver,
-	std::mt19937 & rng) {
+	rng & rng_to_use) {
 
 	// One of the biggest wastes of time in this calculation
 	// is to determine if a board is solvable, because we need
@@ -111,7 +111,7 @@ zzt_board grow_board(coord player_pos, coord end_square,
 	int sumlength = size.x + size.y;
 
 	std::vector<coord_and_tile> empty_coord_assignments =
-		get_empty_coord_assignments(board, rng);
+		get_empty_coord_assignments(board, rng_to_use);
 
 	int current_depth = 1;
 	int filled_squares = 0;
@@ -208,7 +208,7 @@ zzt_board grow_indexed_board(coord player_pos, coord end_square,
 	coord size, int recursion_level, solver & guiding_solver,
 	uint64_t index) {
 
-	std::mt19937 prng(index);
+	rng prng(index);
 
 	return grow_board(player_pos, end_square, size,
 		recursion_level, guiding_solver, prng);
