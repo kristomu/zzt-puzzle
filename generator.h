@@ -21,9 +21,9 @@ zzt_board create_indexed_puzzle(double sparsity,
 	coord player_pos, coord max_size,
 	uint64_t index);
 
-zzt_board grow_board(coord player_pos,
-	coord end_square, coord size, int recursion_level,
-	solver & guiding_solver, rng & rng_to_use);
+zzt_board grow_board(coord player_pos, coord end_square,
+	coord size, int recursion_level, solver & guiding_solver,
+	rng & rng_to_use, int min_skips, int max_skips);
 
 zzt_board grow_indexed_board(coord player_pos, coord end_square,
 	coord size, int recursion_level, solver & guiding_solver,

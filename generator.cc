@@ -1,5 +1,6 @@
 #include "generator.h"
 
+#include <random>
 #include <algorithm>
 #include <omp.h>
 
@@ -10,10 +11,40 @@ typedef std::pair<coord, tile> coord_and_tile;
 // empty tiles in fill_puzzle (below) and also to gradually fill
 // in empty tiles for grow_board.
 
-std::vector<coord_and_tile> get_empty_coord_assignments(
-	const zzt_board & board, rng & rng_to_use) {
+// If varied_tile_selection is true, then the RNG is used to determine
+// the fraction of non-empty tiles that should be of each type (slider,
+// boulder, solid); if it's false, then there's an equal chance of each.
 
+// NOTE: varied_tile_selection must be false for the old behavior!
+// Remember this if we're going to be backwards compatible later.
+
+std::vector<coord_and_tile> get_empty_coord_assignments(
+	const zzt_board & board, rng & rng_to_use,
+	bool varied_tile_selection) {
+
+	// Create the uniform and categorical distributions. Due to
+	// backwards compatibility concerns, both are defined no matter
+	// what varied_tile_selection says, but only one is used
+	// for each.
+
+	// Separating out the functions might be a better idea, consider
+	// this later... TODO?
 	std::uniform_int_distribution<int> tile_dist(0, NUM_OBSTACLES-1);
+	std::discrete_distribution<int> weighted_tile_dist({});
+
+	if (varied_tile_selection) {
+		std::vector<double> weights(NUM_OBSTACLES);
+
+		// Fill the weights vector at random.
+		std::uniform_real_distribution<double> weight_dist(0, 1);
+		std::generate(weights.begin(), weights.end(),
+			[&weight_dist, &rng_to_use]() {
+			return weight_dist(rng_to_use);
+		});
+
+		weighted_tile_dist = std::discrete_distribution<int>(
+			weights.begin(), weights.end());
+	}
 
 	// Create a list of coordinates of every empty tile on the board,
 	// along with a candidate tile to place there. Although this
@@ -29,9 +60,16 @@ std::vector<coord_and_tile> get_empty_coord_assignments(
 				continue;
 			}
 
+			int obstacle_idx;
+			if (varied_tile_selection) {
+				obstacle_idx = weighted_tile_dist(rng_to_use);
+			} else {
+				obstacle_idx = tile_dist(rng_to_use);
+			}
+
 			coord_and_tile pos_tile;
 			pos_tile.first = pos;
-			pos_tile.second = obstacles[tile_dist(rng_to_use)];
+			pos_tile.second = obstacles[obstacle_idx];
 			empty_coord_assignments.push_back(pos_tile);
 		}
 	}
@@ -49,7 +87,7 @@ void fill_puzzle(zzt_board & board, size_t tiles_to_fill,
 	rng & rng_to_use) {
 
 	std::vector<coord_and_tile> empty_coord_assignments =
-		get_empty_coord_assignments(board, rng_to_use);
+		get_empty_coord_assignments(board, rng_to_use, true);
 
 	// Then fill the board.
 	for (size_t i = 0; i < std::min(empty_coord_assignments.size(),
@@ -90,9 +128,13 @@ zzt_board create_indexed_puzzle(double sparsity,
 
 // Grow a board to just before the point where it can't be
 // solved.
+// min_skips and max_skips denote how many "skips" -- ignoring
+// a tile if it produces an unsolvable board -- we handle before
+// giving up. A higher number of skips will give a higher chance
+// of a complex board, but generation will be slower.
 zzt_board grow_board(coord player_pos, coord end_square,
 	coord size, int recursion_level, solver & guiding_solver,
-	rng & rng_to_use) {
+	rng & rng_to_use, int min_skips, int max_skips) {
 
 	// One of the biggest wastes of time in this calculation
 	// is to determine if a board is solvable, because we need
@@ -110,8 +152,13 @@ zzt_board grow_board(coord player_pos, coord end_square,
 
 	int sumlength = size.x + size.y;
 
+	int skips_remaining = max_skips;
+	if (min_skips != max_skips) {
+		skips_remaining = rng_to_use.lrand(min_skips, max_skips+1);
+	}
+
 	std::vector<coord_and_tile> empty_coord_assignments =
-		get_empty_coord_assignments(board, rng_to_use);
+		get_empty_coord_assignments(board, rng_to_use, true);
 
 	int current_depth = 1;
 	int filled_squares = 0;
@@ -186,6 +233,7 @@ zzt_board grow_board(coord player_pos, coord end_square,
 
 		if (result.score < 0) {
 			board.set(new_coord_tile.first, T_EMPTY);
+			// ??? Figure out what this is for later.
 			if (!omp_in_parallel()) {
 				std::cout << "\ngrow_board: unsolvable at " << filled_squares
 					<< ", returning.\n";
@@ -193,7 +241,12 @@ zzt_board grow_board(coord player_pos, coord end_square,
 			#pragma omp critical
 				std::cout << "\ngrow_board: max depth until solvable: "
 					<< max_depth_until_solvable << "\n";
-			return board;
+			if (skips_remaining == 0) {
+				return board;
+			} else {
+				--skips_remaining;
+				depth_until_solvable = 0; // required to stop an instant fail
+			}
 		} else {
 			max_depth_until_solvable = std::max(max_depth_until_solvable,
 				depth_until_solvable);
@@ -211,5 +264,5 @@ zzt_board grow_indexed_board(coord player_pos, coord end_square,
 	rng prng(index);
 
 	return grow_board(player_pos, end_square, size,
-		recursion_level, guiding_solver, prng);
+		recursion_level, guiding_solver, prng, 0, 3);
 }
