@@ -53,9 +53,9 @@ class rng {
 		// Used for random_shuffle etc. Assumes pointers are no longer
 		// than 64 bit. Perhaps using () is a bit of a hack, but the
 		// alternatives are worse. (Is there an off-by-one here?)
-		/*ptrdiff_t operator()(ptrdiff_t end) {
+		uint64_t operator()(uint64_t end) {
 			return (lrand(end));
-		}*/
+		}
 
 		uint64_t operator()() {
 			return long_rand();
