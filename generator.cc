@@ -126,6 +126,75 @@ zzt_board create_indexed_puzzle(double sparsity,
 		player_pos, max_size, prng);
 }
 
+// This function adds the given tile to the board and checks
+// if the board is solvable. If not, the tile is removed and
+// the function returns -1. Otherwise, the function returns the
+// depth of the search required to solve the puzzle.
+
+// Parameters: board is the actual board, reduced_board is a
+// board that's only populated near the exit square (used to)
+// quickly detect some unsolvable situations.
+int add_tile_if_solvable(zzt_board & board,
+	zzt_board & reduced_board,
+	const coord_and_tile & new_coord_tile, coord player_pos,
+	coord end_square, solver & guiding_solver,
+	int current_depth, int max_depth) {
+
+	// Don't overwrite the player position.
+	if (new_coord_tile.first == player_pos) {
+		return current_depth; // TODO: really need to signal this another way
+	}
+
+	board.set(new_coord_tile.first, new_coord_tile.second);
+
+	// We always admit solids because they can only reduce
+	// the state space.
+	if (new_coord_tile.first.manhattan_dist(
+		end_square) < 6 || new_coord_tile.second == T_SOLID) {
+		reduced_board.set(new_coord_tile.first,
+			new_coord_tile.second);
+	}
+
+	uint64_t nodes_visited = 0;
+	eval_score result(LOSS, 0);
+
+	// Do an interleaved iterative deepening DFS: each time we
+	// fail, we increase the depth until we either reach the
+	// maximum or succeed. If we reach the maximum, then the
+	// board became unsolvable due to the last tile we filled;
+	// otherwise, it's still solvable.
+	do {
+		if (!omp_in_parallel()) {
+			std::cout << "grow_board/IDDFS: " << current_depth
+				<< "  \r" << std::flush;
+		}
+		// First test the reduced board.
+		result = guiding_solver.solve(reduced_board, end_square,
+			current_depth, nodes_visited);
+		if (result.score > 0) {
+			result = guiding_solver.solve(board, end_square,
+				current_depth, nodes_visited);
+		}
+		if (result.score <= 0) {
+			++current_depth;
+		}
+	} while (result.score <= 0 && result.score != LOSS &&
+		current_depth < max_depth);
+
+	if (result.score < 0) {
+		board.set(new_coord_tile.first, T_EMPTY);
+		if (new_coord_tile.first.manhattan_dist(
+			end_square) < 6 || new_coord_tile.second == T_SOLID) {
+			reduced_board.set(new_coord_tile.first,
+				T_EMPTY);
+		}
+
+		return -1;
+	} else {
+		return current_depth;
+	}
+}
+
 // Grow a board to just before the point where it can't be
 // solved.
 // min_skips and max_skips denote how many "skips" -- ignoring
@@ -163,94 +232,41 @@ zzt_board grow_board(coord player_pos, coord end_square,
 	int current_depth = 1;
 	int filled_squares = 0;
 
-	uint64_t nodes_visited = 0;
-
 	// For statistical purposes: this gives the longest stretch of
 	// apparently unsolvable puzzles before a deeper depth uncovers
 	// that the puzzle is indeed solvable. This could be used later
 	// for a progressive deepening idea where if nothing happens after
 	// a certain number of depth increases, we assume the puzzle is
 	// unsolvable.
-	int max_depth_until_solvable = 0, depth_until_solvable = 0;
+	int max_depth_until_solvable = 0;
 
 	for (auto new_coord_tile: empty_coord_assignments) {
-
-		// Don't overwrite the player position.
-		if (new_coord_tile.first == player_pos) {
-			continue;
-		}
-
-		board.set(new_coord_tile.first, new_coord_tile.second);
-
-		// We always admit solids because they can only reduce
-		// the state space.
-		if (new_coord_tile.first.manhattan_dist(
-			end_square) < 6 || new_coord_tile.second == T_SOLID) {
-			reduced_board.set(new_coord_tile.first,
-				new_coord_tile.second);
-		}
-
-		++filled_squares;
-
-		// Don't print stats if we're running in parallel mode.
-		if (!omp_in_parallel()) {
-			std::cout << "grow_board: " << filled_squares
-				<< " filled squares.   (" << nodes_visited << ")   \r"
-				<< std::flush;
-		}
-
-		nodes_visited = 0;
-		eval_score result(LOSS, 0);
-
-		// Do an interleaved iterative deepening DFS: each time we
-		// fail, we increase the depth until we either reach the
-		// maximum or succeed. If we reach the maximum, then the
-		// board became unsolvable due to the last tile we filled,
-		// so remove it and return; if we succeed, it's still solvable,
-		// so add another tile.
-		do {
-			if (!omp_in_parallel()) {
-				std::cout << "grow_board/IDDFS: " << current_depth << "  \r" << std::flush;
-			}
-			// First test the reduced board.
-			result = guiding_solver.solve(reduced_board, end_square,
-				current_depth, nodes_visited);
-			if (result.score > 0) {
-				result = guiding_solver.solve(board, end_square,
-					current_depth, nodes_visited);
-			}
-			if (result.score <= 0) {
-				++current_depth;
-				++depth_until_solvable;
-			}
 		// Try a maxlength heuristic... seems to work in practice,
 		// that if we add something to a board, it'll never take more
 		// moves than the max length along an edge to solve... IDK why.
-		// Apparently it *is* possible. HACK to see how much performance
-		// we get from a looser criterion.
-		} while (result.score <= 0 && result.score != LOSS &&
-			current_depth < recursion_level && depth_until_solvable < sumlength + 1);
+		int solvable_at = add_tile_if_solvable(board,
+			reduced_board, new_coord_tile, player_pos, end_square,
+			guiding_solver, current_depth,
+			std::min(recursion_level, current_depth + sumlength+1));
 
-		if (result.score < 0) {
-			board.set(new_coord_tile.first, T_EMPTY);
-			// ??? Figure out what this is for later.
+		// If it's unsolvable, either skip to the next one
+		// if we have more skips available, or give up.
+
+		if (solvable_at == -1) {
+			// Provide more information if we're not in parallel mode.
 			if (!omp_in_parallel()) {
 				std::cout << "\ngrow_board: unsolvable at " << filled_squares
-					<< ", returning.\n";
+					<< "\n";
 			}
-			#pragma omp critical
-				std::cout << "\ngrow_board: max depth until solvable: "
-					<< max_depth_until_solvable << "\n";
-			if (skips_remaining == 0) {
+			if (skips_remaining-- == 0) {
 				return board;
-			} else {
-				--skips_remaining;
-				depth_until_solvable = 0; // required to stop an instant fail
 			}
 		} else {
+			// Update max depth until solvable stat.
 			max_depth_until_solvable = std::max(max_depth_until_solvable,
-				depth_until_solvable);
-			depth_until_solvable = 0;
+				solvable_at - current_depth);
+			current_depth = solvable_at;
+			++filled_squares;
 		}
 	}
 
@@ -264,5 +280,5 @@ zzt_board grow_indexed_board(coord player_pos, coord end_square,
 	rng prng(index);
 
 	return grow_board(player_pos, end_square, size,
-		recursion_level, guiding_solver, prng, 0, 3);
+		recursion_level, guiding_solver, prng, 0, 5);
 }

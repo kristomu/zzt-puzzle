@@ -59,7 +59,6 @@ class zzt_board {
 			return push(current_pos, get_delta(dir), out_terminus);
 		}
 
-
 	public:
 		coord player_pos;
 

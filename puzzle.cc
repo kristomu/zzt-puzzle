@@ -517,6 +517,7 @@ int main(int argc, char ** argv) {
 	// in memory all the time (including their expensive transposition tables),
 	// but something more elegant would probably be preferrable.
 	#pragma omp parallel for if(parallel) private(dfs, iddfs) schedule(monotonic:dynamic)
+	// TODO: Make this specifiable from the command line
 	for (int i = 0; i < (int)1e7; ++i) {
 		// Vary the size of the board but in a predictable way
 		// so that we don't have to deal with
@@ -572,29 +573,29 @@ int main(int argc, char ** argv) {
 
 			stats_by_id[i] = stats;
 
-			std::cout << "Index is " << i << std::endl;
+			std::cout << "Index is N" << i << std::endl;
 			test_board.print();
-			std::cout << "Index " << i << ": size: " << max.x << ", " << max.y
+			std::cout << "Index N" << i << ": size: " << max.x << ", " << max.y
 				<< " = " << max.x * max.y << std::endl;
-			std::cout << "Index " << i << ": Solution score: " << result.score << std::endl;
-			std::cout << "Index " << i << ": turns in solution " << solution_turns
+			std::cout << "Index N" << i << ": Solution score: " << result.score << std::endl;
+			std::cout << "Index N" << i << ": turns in solution " << solution_turns
 				<< std::endl;
-			std::cout << "Index " << i << ": Changes: mean: " << mean_change
+			std::cout << "Index N" << i << ": Changes: mean: " << mean_change
 				<< " max: " << max_change << std::endl;
-			std::cout << "Index " << i << ": Start-finish change count: " <<
+			std::cout << "Index N" << i << ": Start-finish change count: " <<
 				start_finish_changes << std::endl;
-			std::cout << "Index " << i << ": Unusual moves " <<
+			std::cout << "Index N" << i << ": Unusual moves " <<
 				unusual_moves << std::endl;
-			std::cout << "Index " << i << ": Unusual move proportion " <<
+			std::cout << "Index N" << i << ": Unusual move proportion " <<
 				unusual_proportion << std::endl;
-			std::cout << "Index " << i << ": Real sparsity is "
+			std::cout << "Index N" << i << ": Real sparsity is "
 				<< real_board_sparsity << ", solution in " << solution.size()
 				<< "/" << result.solution_length << ": ";
 			print_solution(solution);
 
-			std::cout << "Index " << i << ": nodes visited: " << nodes_visited << std::endl;
+			std::cout << "Index N" << i << ": nodes visited: " << nodes_visited << std::endl;
 
-			std::cout << "Index " << i << ": summary: ";
+			std::cout << "Index N" << i << ": summary: ";
 			std::copy(stats.begin(), stats.end(),
 				std::ostream_iterator<double>(std::cout, " "));
 			std::cout << std::endl;

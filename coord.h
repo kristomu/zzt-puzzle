@@ -35,11 +35,11 @@ class coord {
 			return *this;
 		}
 
-		bool operator==(const coord & other) {
+		bool operator==(const coord & other) const {
 			return x == other.x && y == other.y;
 		}
 
-		bool operator!=(const coord & other) {
+		bool operator!=(const coord & other) const {
 			return !(*this == other);
 		}
 
