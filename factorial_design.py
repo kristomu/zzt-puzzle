@@ -28,7 +28,13 @@ def read_puzzle_metadata(puzzle_file, puzzle_data={}):
 # the best Euclidean distance to the needle.
 def k_best_euclidean(haystack, needle, k):
 	distances = np.linalg.norm(haystack - needle, axis=1)
-	return np.argsort(distances)[:k]
+	best_k = np.argsort(distances)[:k]
+	# Return a tuple both giving the k best Euclidean indices,
+	# and their rank (0 being best). This is used for a progressive
+	# sampling later so that when I test difficulty levels, then if I
+	# give up before all the puzzles have been solved, the data will still
+	# be useful.
+	return [(rank, best_k[rank]) for rank in range(k)]
 
 # Read the files.
 # You may want to add different file names here.
@@ -38,7 +44,7 @@ for file in ["para_skip_test_III.txt", "para_skip_test_II.txt",
 	"para_skip_test_IV.txt", "para_skip_test.txt", "para_skip_test_VII.txt",
 	"para_skip_test_VI.txt", "para_skip_test_V.txt"]:
 	y = read_puzzle_metadata(open(file, "r"), y)
-	print("Read %d puzzles" % len(y))
+	print("Seen %d puzzles in total" % len(y))
 
 # Get the keys and values
 y_keys = tuple(y.keys())
@@ -61,16 +67,30 @@ percentiles = np.percentile(reduced_y_values, axis=0,
 products = np.array(list(itertools.product(*percentiles.T)))
 
 # How many puzzles (examples) from each experiment do we want?
-puzzles_per_experiment = 10
-puzzle_indices_chosen = set()
+max_puzzles_per_experiment = 10
+puzzle_index_ranks = {}
 for i in range(len(products)):
 	print("Progress: %.5f, puzzles: %d" % (i/len(products),
-		len(puzzle_indices_chosen)))
-	best_indices = k_best_euclidean(reduced_y_values, products[i],
-		puzzles_per_experiment)
-	puzzle_indices_chosen = puzzle_indices_chosen.union(best_indices)
+		len(puzzle_index_ranks)))
+	best_ranks_indices = k_best_euclidean(
+		reduced_y_values, products[i], max_puzzles_per_experiment)
+	for rank, index in best_ranks_indices:
+		if not index in puzzle_index_ranks:
+			puzzle_index_ranks[index] = rank
+		else:
+			puzzle_index_ranks[index] = min(rank,
+				puzzle_index_ranks[index])
 
-puzzles = [y_keys[i] for i in puzzle_indices_chosen]
+# Now extract the puzzle indices by highest rank, turn the
+# indices into puzzle names, randomly shuffle, and then sort by
+# the rank. This will place all the first rank puzzles first, then
+# all the second rank ones, etc.
+puzzle_rank_list = [(y_keys[x[0]], x[1]) for x in puzzle_index_ranks.items()]
+np.random.shuffle(puzzle_rank_list)
+puzzle_rank_list.sort(key=lambda in_tuple: in_tuple[1])
+
+# Extract just the puzzle names, then print them.
+puzzles = [x[0] for x in puzzle_rank_list]
 print(puzzles)
-# And now you can do something like say
-# open("factorial_design_10.txt", "w"")
+# And now we can do something like say
+# open("factorial_design_10.txt", "w"").write(str(puzzles))
